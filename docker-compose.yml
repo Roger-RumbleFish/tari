@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  wallet1:
+    build: .
+    container_name: wallet1
+    volumes:
+      - ./wallet1_data:/wallet_data
+    command: ["--base-path", "/wallet_data"]
+    tty: true
+
+  wallet2:
+    build: .
+    container_name: wallet2
+    volumes:
+      - ./wallet2_data:/wallet_data
+    command: ["--base-path", "/wallet_data"]
+    tty: true
+
+  wallet3:
+    build: .
+    container_name: wallet3
+    volumes:
+      - ./wallet3_data:/wallet_data
+    command: ["--base-path", "/wallet_data"]
+    tty: true

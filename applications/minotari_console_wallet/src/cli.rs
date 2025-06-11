@@ -30,11 +30,13 @@ use std::{
 use chrono::{DateTime, Utc};
 use clap::{Args, Parser, Subcommand};
 use minotari_app_utilities::{common_cli_args::CommonCliArgs, utilities::UniPublicKey};
+use serde::{Deserialize, Serialize};
 use tari_common::configuration::{ConfigOverrideProvider, Network};
-use tari_common_types::tari_address::TariAddress;
+use tari_common_types::{tari_address::TariAddress, types::{CompressedPublicKey, FixedHash}};
 use tari_comms::multiaddr::Multiaddr;
 use tari_core::transactions::{tari_amount, tari_amount::MicroMinotari};
 use tari_key_manager::SeedWords;
+use tari_script::CompressedCheckSigSchnorrSignature;
 use tari_utilities::{
     hex::{Hex, HexError},
     SafePassword,
@@ -174,9 +176,14 @@ pub enum CliCommands {
     Sync(SyncArgs),
     ExportViewKeyAndSpendKey(ExportViewKeyAndSpendKeyArgs),
     ImportPaperWallet(ImportPaperWalletArgs),
-    ShowPayRef(ShowPayRefArgs),
-    FindPayRef(FindPayRefArgs),
-    ListTx,
+
+    FinalizeMultisigUtxoStart(FinalizeMultisigUtxoStartArgs),
+    FinalizeMultisigUtxoStartParty(FinalizeMultisigUtxoStartPartyArgs),
+    FinalizeMultisigUtxoEncumber(FinalizeMultisigUtxoEncumberArgs),
+    FinalizeMultisigUtxoSigs(FinalizeMultisigUtxoSigsArgs),
+    FinalizeMultisigUtxoSpendTx(FinalizeMultisigUtxoSpendTxArgs),
+    CreateMultisigUtxoParty(CreateMultisigUtxoPartyArgs),
+    CreateMultisigUtxo(CreateMultisigUtxoArgs),
 }
 
 #[derive(Debug, Args, Clone)]
@@ -477,11 +484,117 @@ pub struct SyncArgs {
 }
 
 #[derive(Debug, Args, Clone)]
-pub struct ShowPayRefArgs {
-    pub transaction_id: u64,
+pub struct FinalizeMultisigUtxoStartArgs {
+    #[clap(long, default_value = "1")]
+    pub fee_per_gram: MicroMinotari,
+    #[clap(long)]
+    pub recipient_info: Vec<CliRecipientInfo>,
+    #[clap(long, default_value = "true")]
+    pub use_utxo_list_input_file: bool,
 }
 
 #[derive(Debug, Args, Clone)]
-pub struct FindPayRefArgs {
-    pub payment_reference_hex: String,
+pub struct FinalizeMultisigUtxoStartPartyArgs {
+    #[clap(long)]
+    pub input_file: Option<String>,
+    #[clap(long)]
+    pub utxo_list_file_path: Option<PathBuf>,
+    #[clap(long, default_value = "")]
+    pub alias: String,
+}
+
+
+#[derive(Debug, Args, Clone)]
+pub struct FinalizeMultisigUtxoEncumberArgs {
+    #[clap(long, default_value = "")]
+    pub session_id: String,
+    #[clap(long)]
+    pub member: Vec<String>,
+    #[clap(long)]
+    pub utxo_list_file_path: Option<PathBuf>,
+    #[clap(short, long, default_value = "Spend pre-mine encumber aggregate UTXO")]
+    pub payment_id: String,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct FinalizeMultisigUtxoSigsArgs {
+    #[clap(long, default_value = "")]
+    pub session_id: String,
+    #[clap(long)]
+    pub utxo_list_file_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct FinalizeMultisigUtxoSpendTxArgs {
+    #[clap(long, default_value = "")]
+    pub session_id: String,
+    #[clap(long)]
+    pub member: Vec<String>,
+}
+
+/// This step is run by each party member and generates indexed script inputs for the leader for all bridge UTXOs
+#[derive(Debug, Args, Clone)]
+pub struct CreateMultisigUtxoPartyArgs {
+    #[clap(long)]
+    pub(crate) session_id: String,
+}
+
+/// This step is run by the leader and generates the bridge UTXOs
+#[derive(Debug, Args, Clone)]
+pub struct CreateMultisigUtxoArgs {
+    #[clap(long, default_value = "2")]
+    pub value: u64,
+
+    #[clap(long)]
+    // list of public keys of the parties involved in the multisig
+    pub recipient_address: TariAddress,
+
+    // How many parties are involved in the multisig
+    #[clap(long, default_value = "2")]
+    pub n: u8,
+    // How many signatures are required to spend the multisig UTXO
+    #[clap(long, default_value = "2")]
+    pub m: u8,
+
+    #[clap(long)]
+    // list of public keys of the parties involved in the multisig
+    pub public_keys: Vec<UniPublicKey>,
+}
+
+
+#[derive(Debug, Args, Clone)]
+pub struct SendMultisigArgs {
+    pub amount: MicroMinotari,
+    pub destination: TariAddress,
+    #[clap(short, long, default_value = "<No message>")]
+    pub payment_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultisigOutput {
+    pub session_id: String,
+    pub utxos: Vec<String>,
+    pub commitments: Vec<String>,
+
+    pub minimum_signatures: u8,
+    pub parties_public_keys: Vec<UniPublicKey>,
+    
+    pub fee_per_gram: MicroMinotari,
+    pub value: MicroMinotari,
+    pub recipient_address: TariAddress,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultisigPartyOutput {
+    pub session_id: String,
+    pub member_public_key: CompressedPublicKey,
+    pub commitment_signatures: Vec<CommitmentSignature>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitmentSignature {
+    pub signature: CompressedCheckSigSchnorrSignature,
+    pub shared_secret_public_key: CompressedPublicKey,
+    pub sender_offset_key: CompressedPublicKey,
+    pub sender_offset_nonce_key: CompressedPublicKey,
 }

@@ -98,6 +98,8 @@ pub enum CommandError {
     FailedSignature(String),
     #[error("Tari script error: {0}")]
     ScriptError(#[from] ScriptError),
+    #[error("Party member not found")]
+    PartyMemberNotFound,
 }
 
 impl From<SchnorrSignatureError> for CommandError {

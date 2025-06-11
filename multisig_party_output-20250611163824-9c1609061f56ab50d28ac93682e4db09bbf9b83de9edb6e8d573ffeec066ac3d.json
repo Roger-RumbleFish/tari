@@ -1,0 +1,15 @@
+{
+  "session_id": "20250611163824",
+  "member_public_key": "9c1609061f56ab50d28ac93682e4db09bbf9b83de9edb6e8d573ffeec066ac3d",
+  "commitment_signatures": [
+    {
+      "signature": {
+        "public_nonce": "96e8953ee0dc9de6ab589ebbdb04c0de0f879bd882af4eebca0bde71da265a0e",
+        "signature": "60bef332a90654d4ea3850318ed164ea3fcb1c64a738a7bf1fa0e089fbd2dd01"
+      },
+      "shared_secret_public_key": "22df63e95dc9abd0b80ab349e4d19ff0fbbfa5d4917bb3ee74da1c7169898563",
+      "sender_offset_key": "6cc0d04c18a18fd2ad6ef31e03140f287573db767c353c651f5cd009f3e39e7f",
+      "sender_offset_nonce_key": "bae767dfa9a3e6ac99216897afcac505fef290d6d387e57743bae445b8ae4c1e"
+    }
+  ]
+}

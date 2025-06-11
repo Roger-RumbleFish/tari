@@ -103,7 +103,7 @@ use tari_core::{
             UnblindedOutput,
             WalletOutput,
         },
-        transaction_key_manager::{TariKeyId, TransactionKeyManagerInterface},
+        transaction_key_manager::{SecretTransactionKeyManagerInterface, TariKeyId, TransactionKeyManagerInterface},
         CryptoFactories,
     },
 };
@@ -114,13 +114,15 @@ use tari_crypto::{
 };
 use tari_key_manager::{cipher_seed::CipherSeed, SeedWords};
 use tari_p2p::{auto_update::AutoUpdateConfig, peer_seeds::SeedPeer, PeerSeedsConfig};
-use tari_script::{push_pubkey_script, CompressedCheckSigSchnorrSignature};
+use tari_script::{push_pubkey_script, script, CompressedCheckSigSchnorrSignature};
 use tari_shutdown::Shutdown;
 use tari_utilities::{encoding::MBase58, hex::Hex, ByteArray, SafePassword};
 use tokio::{
     sync::{broadcast, mpsc},
     time::{sleep, timeout},
 };
+
+use crate::automation::multisig::{create_multisig_output, create_multisig_party_member_output, read_multisig_output, save_multisig_output, save_multisig_party_output};
 
 use super::error::CommandError;
 use crate::{
@@ -1014,6 +1016,7 @@ pub async fn command_runner(
                 }
             },
             PreMineStartParty(args) => {
+                // TODO roger
                 let mut alias = args.alias.clone();
                 loop {
                     if alias.is_empty() || alias.contains(" ") {
@@ -2711,131 +2714,88 @@ pub async fn command_runner(
                 println!("removing temp wallet in: {:?}", temp_path);
                 fs::remove_dir_all(temp_path)?;
             },
-            ShowPayRef(args) => {
-                // Show transaction details first
-                match transaction_service
-                    .get_any_transaction(args.transaction_id.into())
-                    .await
-                {
-                    Ok(Some(tx)) => {
-                        println!("Transaction ID: {}", args.transaction_id);
-                        let _status = match &tx {
-                            WalletTransaction::Completed(completed_tx) => {
-                                println!("Transaction status: Completed");
-                                println!("Amount: {}", completed_tx.amount);
-                                println!("Fee: {}", completed_tx.fee);
-                                println!("Direction: {:?}", completed_tx.direction);
-                                if let Some(height) = completed_tx.mined_height {
-                                    println!("Mined at height: {}", height);
-                                }
-                                if let Some(timestamp) = completed_tx.mined_timestamp {
-                                    println!("Mined timestamp: {}", timestamp);
-                                }
-                                if completed_tx.mined_in_block.is_some() {
-                                    println!("\nReceived PayRefs for this transaction:");
-                                    for (i, pay_ref) in completed_tx.calculate_received_payment_references().iter().enumerate() {
-                                        println!("{}. PayRef: {}", i + 1, pay_ref);
-                                    }
-                                    println!("\nSent PayRefs for this transaction:");
-                                    for (i, pay_ref) in completed_tx.calculate_sent_payment_references().iter().enumerate() {
-                                        println!("{}. PayRef: {}", i + 1, pay_ref);
-                                    }
-                                    println!("\nChange PayRefs for this transaction:");
-                                    for (i, pay_ref) in completed_tx.calculate_change_payment_references().iter().enumerate() {
-                                        println!("{}. PayRef: {}", i + 1, pay_ref);
-                                    }
-                                } else {
-                                    println!("Payrefs: Transaction not mined yet.");
-                                }
-                                "Completed"
-                            },
-                            minotari_wallet::transaction_service::storage::models::WalletTransaction::PendingInbound(_) => {
-                                println!("Transaction status: PendingInbound");
-                                "PendingInbound"
-                            },
-                            minotari_wallet::transaction_service::storage::models::WalletTransaction::PendingOutbound(_) => {
-                                println!("Transaction status: PendingOutbound");
-                                "PendingOutbound"
-                            },
-                        };
-                    },
-                    Ok(None) => {
-                        println!("Transaction ID {} not found", args.transaction_id);
-                    },
-                    Err(e) => eprintln!("ShowPayRef error! {}", e),
-                }
+
+            CreateMultisigUtxo(args) => {
+                let mut output_service = wallet.output_manager_service.clone();
+           
+                let output = create_multisig_output(&mut output_service, args).await?;
+                save_multisig_output(output.clone()).await?;
+
+                let session_id = output.session_id;
+
+
+                let new_output = read_multisig_output(session_id).await?;
+
+                println!("Multisig UTXO created: {:?}", new_output);
+
+
+                // let out_path = out_dir(&output.session_id)?;
+                // fs::create_dir_all(&out_path)?; // Ensure the directory exists
+                // let out_file = out_path.join("multisig_output.json"); // Or any filename you prefer
+                // serde_json::to_writer_pretty(fs::File::create(&out_file)?, &output)?;
+                // let utxo_hashes = output.utxos
+                // .iter()
+                // .map(|utxo| utxo.hash)
+                // .collect::<Vec<_>>();
+
+
+                // let key_manager_service = wallet.key_manager_service.clone();
+                // let utxos = transaction_service.fetch_unspent_outputs(utxo_hashes).await?;
+                // // console log utxos fetched
+                // for (i, utxo) in utxos.iter().enumerate() {
+                //     let (_spending_key, value, _) = key_manager_service.try_output_key_recovery(utxo, None).await?;
+                //     println!(
+                //         "{}. Value: {}, Script: {}, Features: {:?}",
+                //         i + 1,
+                //         value,
+                //         utxo.script.to_hex(),
+                //         utxo.features
+                //     );
+                // }
+
+                // // // let utxos_len = utxos.len();
+                // println!("selected utxos {}", output.utxos.len());
+
+                // let value = tari_core::transactions::tari_amount::MicroMinotari(args.value);
+                // let public_keys: Vec<CompressedPublicKey> = args.public_keys.iter().map(|k| k.clone().into()).collect();
+
+                // let result = output_service
+                //     .create_multisig_output(value, args.recipient_address, args.m, args.n, public_keys)
+                //     .await;
+
+                //     match result {
+                //         Ok(output) => {
+                //             println!("Multisig UTXO created: {:?}", output);
+                //         },
+                //         Err(e) => {
+                //             eprintln!("Error creating multisig UTXO: {}", e);
+                //         }
+                //     }
+
+       
+                println!("Creating multisig UTXO");
             },
-            FindPayRef(args) => match FixedHash::from_hex(&args.payment_reference_hex) {
-                Ok(payref) => match transaction_service.get_payment_by_reference(payref).await {
-                    Ok(Some(payment_details)) => {
-                        println!("Found PayRef: {}", args.payment_reference_hex);
-                        println!("Transaction ID: {}", payment_details.tx_id);
-                        println!("Amount: {}", payment_details.amount);
-                        println!("Direction: {:?}", payment_details.direction);
-                        println!("Block height: {}", payment_details.block_height);
-                        println!("Confirmations: {}", payment_details.confirmations);
-                        if let Some(timestamp) = payment_details.timestamp {
-                            println!("Timestamp: {}", timestamp);
-                        }
-                        if let Some(payment_id) = &payment_details.payment_id {
-                            println!("Payment ID: {}", String::from_utf8_lossy(payment_id));
-                        }
-                    },
-                    Ok(None) => {
-                        println!("No payment found for PayRef: {}", args.payment_reference_hex);
-                    },
-                    Err(e) => eprintln!("FindPayRef error! {}", e),
-                },
-                Err(e) => {
-                    eprintln!("FindPayRef error! Invalid PayRef format: {}", e);
-                },
+            CreateMultisigUtxoParty(_args) => {
+               let key_manager_service = wallet.key_manager_service.clone();
+                let output = create_multisig_party_member_output(key_manager_service, _args.session_id.clone()).await?;
+
+                save_multisig_party_output(output).await?;
+                println!("Creating multisig UTXO party member output");
             },
-            ListTx => {
-                debug!(target: LOG_TARGET, "payref_debug: List all transactions command starting execution");
-
-                match transaction_service.get_completed_transactions(None, None, None).await {
-                    Ok(txs) => {
-                        debug!(target: LOG_TARGET, "ListTxs command got {} transactions", txs.len());
-
-                        if txs.is_empty() {
-                            println!("No transactions.");
-                            continue;
-                        }
-                        println!("Found {} transaction(s)", txs.len());
-                        println!("{}", "=".repeat(80));
-
-                        for (i, tx) in txs.iter().enumerate() {
-                            println!("{}. Transaction ID: {}", i + 1, tx.tx_id);
-                            println!("   Amount: {}", tx.amount);
-                            println!("   Direction: {:?}", tx.direction);
-                            println!("   Status: {:?}", tx.status);
-                            if let Some(height) = tx.mined_height {
-                                println!("   Mined at height: {}", height);
-                            }
-                            if let Some(timestamp) = tx.mined_timestamp {
-                                println!("   Mined timestamp: {}", timestamp);
-                            }
-                            if tx.mined_in_block.is_some() {
-                                println!("\nReceived PayRefs for this transaction:");
-                                for (i, pay_ref) in tx.calculate_received_payment_references().iter().enumerate() {
-                                    println!("{}. PayRef: {}", i + 1, pay_ref);
-                                }
-                                println!("\nSent PayRefs for this transaction:");
-                                for (i, pay_ref) in tx.calculate_sent_payment_references().iter().enumerate() {
-                                    println!("{}. PayRef: {}", i + 1, pay_ref);
-                                }
-                                println!("\nChange PayRefs for this transaction:");
-                                for (i, pay_ref) in tx.calculate_change_payment_references().iter().enumerate() {
-                                    println!("{}. PayRef: {}", i + 1, pay_ref);
-                                }
-                            } else {
-                                println!("Payrefs: Transaction not mined yet.");
-                            }
-                            println!();
-                        }
-                    },
-                    Err(e) => eprintln!("ListTxs error! {}", e),
-                }
+            FinalizeMultisigUtxoEncumber(_args) => {
+                print!("Finalizing multisig UTXO encumber");
+            },
+            FinalizeMultisigUtxoSigs(_args) => {
+                print!("Finalizing multisig UTXO signatures");
+            },
+            FinalizeMultisigUtxoSpendTx(_args) => {
+                print!("Finalizing multisig UTXO spend transaction");
+            }
+            FinalizeMultisigUtxoStart(_args) => {
+                print!("Finalizing multisig UTXO start");
+            }
+            FinalizeMultisigUtxoStartParty(_args) => {
+                print!("Finalizing multisig UTXO start party");
             },
         }
     }

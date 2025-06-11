@@ -646,9 +646,13 @@ mod test {
                 CliCommands::PreMineSpendBackupUtxo(_) => {},
                 CliCommands::Sync(_) => {},
                 CliCommands::ExportViewKeyAndSpendKey(_) => {},
-                CliCommands::ShowPayRef(_) => {},
-                CliCommands::FindPayRef(_) => {},
-                CliCommands::ListTx => {},
+                CliCommands::FinalizeMultisigUtxoStart(_) => {},
+                CliCommands::FinalizeMultisigUtxoStartParty(_) => {},
+                CliCommands::FinalizeMultisigUtxoEncumber(_) => {},
+                CliCommands::FinalizeMultisigUtxoSigs(_) => {},
+                CliCommands::FinalizeMultisigUtxoSpendTx(_) => {},
+                CliCommands::CreateMultisigUtxo(_) => {},
+                CliCommands::CreateMultisigUtxoParty(_) => {},
             }
         }
         assert!(
