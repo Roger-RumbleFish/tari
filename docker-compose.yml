@@ -6,7 +6,7 @@ services:
     container_name: wallet1
     volumes:
       - ./wallet1_data:/wallet_data
-    command: ["--base-path", "/wallet_data"]
+    entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
     tty: true
 
   wallet2:
@@ -14,7 +14,7 @@ services:
     container_name: wallet2
     volumes:
       - ./wallet2_data:/wallet_data
-    command: ["--base-path", "/wallet_data"]
+    entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
     tty: true
 
   wallet3:
@@ -22,5 +22,5 @@ services:
     container_name: wallet3
     volumes:
       - ./wallet3_data:/wallet_data
-    command: ["--base-path", "/wallet_data"]
+    entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
     tty: true

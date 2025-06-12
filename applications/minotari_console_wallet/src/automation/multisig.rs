@@ -26,8 +26,8 @@ use tari_core::transactions::{
     },
 };
 use tari_utilities::ByteArray;
-use crate::{automation::{error::CommandError, utils::out_dir}, cli::CommitmentSignature};
-use crate::cli::{CreateMultisigUtxoArgs, MultisigOutput, MultisigPartyOutput};
+use crate::{automation::{error::CommandError, utils::out_dir}, cli::{ LeaderCommitmentSignature, MemberCommitmentSignature, MultisigLeaderPartyOutput, MultisigMemberPartyOutput, MultisigPartyOutput}};
+use crate::cli::{CreateMultisigUtxoArgs, MultisigOutput};
 
 pub async fn select_utxos_for_amount(
     output_service: &mut OutputManagerHandle,
@@ -97,6 +97,7 @@ pub async fn create_multisig_party_member_output(key_manager_service: Transactio
     let config = read_multisig_output(session_id.clone()).await
         .map_err(|e| CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
+        print!("User public key: {}", public_key.to_hex());
     let member_public_key = config.parties_public_keys.iter()
         .find(|key| key.as_compressed().eq(&public_key))
         .ok_or(CommandError::PartyMemberNotFound)?;
@@ -104,7 +105,8 @@ pub async fn create_multisig_party_member_output(key_manager_service: Transactio
     let recipient_public_view_key = config.recipient_address.public_view_key()
         .ok_or(CommandError::InvalidArgument("Missing public view key".to_string()))?;
 
-    let mut commitment_signatures: Vec<CommitmentSignature> = Vec::new();
+    let mut leader_commitment_signatures: Vec<LeaderCommitmentSignature> = Vec::new();
+    let mut member_commitment_signatures: Vec<MemberCommitmentSignature> = Vec::new();
 
     for (output_index, commitment_hex) in config.commitments.iter().enumerate() {
         let sender_offset_key = key_manager_service.get_random_key().await?;
@@ -133,28 +135,45 @@ pub async fn create_multisig_party_member_output(key_manager_service: Transactio
 
         let shared_secret_public_key = CompressedPublicKey::from_canonical_bytes(shared_secret.as_bytes())?;
 
-        commitment_signatures.push(CommitmentSignature {
-            signature: script_input_signature,
-            shared_secret_public_key,
-            sender_offset_key: sender_offset_key.pub_key,
-            sender_offset_nonce_key: sender_offset_nonce_key.pub_key,
+        leader_commitment_signatures.push(LeaderCommitmentSignature {
+            signature: script_input_signature.clone(),
+            shared_secret_public_key: shared_secret_public_key,
+            sender_offset_public_key: sender_offset_key.pub_key,
+            sender_offset_public_nonce_key: sender_offset_nonce_key.pub_key,
+        });
+
+        member_commitment_signatures.push(MemberCommitmentSignature {
+            signature: script_input_signature.clone(),
+            secret_key: script_key_id,
+            sender_offset_key: sender_offset_key.key_id,
+            sender_offset_nonce_key: sender_offset_nonce_key.key_id,
         });
     }
 
-    let multisig_party_output = MultisigPartyOutput {
-        session_id,
-        commitment_signatures,
+    let multisig_leader_party_output = MultisigLeaderPartyOutput {
+        session_id: session_id.clone(),
+        commitment_signatures: leader_commitment_signatures,
         member_public_key: member_public_key.as_compressed().clone(),
     };
 
-    Ok(multisig_party_output)
+    let multisig_member_party_output = MultisigMemberPartyOutput {
+        session_id: session_id.clone(),
+        member_public_key: member_public_key.as_compressed().clone(),
+        commitment_signatures: member_commitment_signatures,
+    };
+
+    Ok(MultisigPartyOutput { leader: multisig_leader_party_output, member: multisig_member_party_output })
 }
 
 pub async fn save_multisig_output(multisig_output: MultisigOutput) -> Result<(), CommandError> {
     let output = multisig_output.clone();
-    let base_dir = std::env::current_dir()?;
 
-    let out_file = base_dir.join(format!("multisig_output-{}.json", output.session_id));
+    let out_dir = std::path::Path::new("/wallet_data");
+    if !out_dir.exists() {
+        std::fs::create_dir_all(out_dir)?;
+    }
+
+    let out_file = out_dir.join(format!("multisig_output-{}.json", output.session_id));
 
     print!("Saving multisig output to: {}", out_file.display());
     let file = fs::File::create(&out_file)?;
@@ -165,21 +184,49 @@ pub async fn save_multisig_output(multisig_output: MultisigOutput) -> Result<(),
 }
 
 pub async fn save_multisig_party_output(multisig_output: MultisigPartyOutput) -> Result<(), CommandError> {
-    let output = multisig_output.clone();
-    let base_dir = std::env::current_dir()?;
+    let leader_output = multisig_output.leader.clone();
+    let member_output = multisig_output.member.clone();
 
-    let out_file = base_dir.join(format!("multisig_party_output-{}-{}.json", output.session_id, output.member_public_key.to_hex()));
+    let out_dir = std::path::Path::new("/wallet_data");
+    if !out_dir.exists() {
+        std::fs::create_dir_all(out_dir)?;
+    }
 
-    print!("Saving multisig party output to: {}", out_file.display());
-    let file = fs::File::create(&out_file)?;
-    serde_json::to_writer_pretty(file, &output)
+   // Save leader output (include user address in filename)
+    let leader_file = out_dir.join(format!(
+        "multisig_party_output-leader-{}-{}.json",
+        leader_output.session_id,
+        leader_output.member_public_key.to_hex()
+    ));
+    println!("Saving multisig leader party output to: {}", leader_file.display());
+    let file = fs::File::create(&leader_file)?;
+    serde_json::to_writer_pretty(file, &leader_output)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    // Save member output (also include user address in filename)
+    let member_file = out_dir.join(format!(
+        "multisig_party_output-member-{}-{}.json",
+        member_output.session_id,
+        member_output.member_public_key.to_hex()
+    ));
+    println!("Saving multisig member party output to: {}", member_file.display());
+    let file = fs::File::create(&member_file)?;
+    serde_json::to_writer_pretty(file, &member_output)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     Ok(())
 }
 
 pub async fn read_multisig_output(session_id: String) -> Result<MultisigOutput, CommandError> {
-    let file_path = std::env::current_dir()?.join(format!("multisig_output-{}.json", session_id));
+
+    let out_dir = std::path::Path::new("/wallet_data");
+    if !out_dir.exists() {
+        std::fs::create_dir_all(out_dir)?;
+    }
+
+    let file_path = std::path::Path::new("/wallet_data").join(format!("multisig_output-{}.json", session_id));
+
+
     let file = fs::File::open(file_path)?;
     let multisig_output: MultisigOutput = serde_json::from_reader(file)
         .map_err(|e| CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;

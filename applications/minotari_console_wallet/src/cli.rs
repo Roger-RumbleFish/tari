@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use tari_common::configuration::{ConfigOverrideProvider, Network};
 use tari_common_types::{tari_address::TariAddress, types::{CompressedPublicKey, FixedHash}};
 use tari_comms::multiaddr::Multiaddr;
-use tari_core::transactions::{tari_amount, tari_amount::MicroMinotari};
+use tari_core::transactions::{tari_amount::{self, MicroMinotari}, transaction_key_manager::TariKeyId};
 use tari_key_manager::SeedWords;
 use tari_script::CompressedCheckSigSchnorrSignature;
 use tari_utilities::{
@@ -584,17 +584,39 @@ pub struct MultisigOutput {
     pub recipient_address: TariAddress,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultisigPartyOutput {
-    pub session_id: String,
-    pub member_public_key: CompressedPublicKey,
-    pub commitment_signatures: Vec<CommitmentSignature>,
+    pub leader: MultisigLeaderPartyOutput,
+    pub member: MultisigMemberPartyOutput,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommitmentSignature {
+pub struct MultisigLeaderPartyOutput {
+    pub session_id: String,
+    pub member_public_key: CompressedPublicKey,
+    pub commitment_signatures: Vec<LeaderCommitmentSignature>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultisigMemberPartyOutput {
+    pub session_id: String,
+    pub member_public_key: CompressedPublicKey,
+    pub commitment_signatures: Vec<MemberCommitmentSignature>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LeaderCommitmentSignature {
     pub signature: CompressedCheckSigSchnorrSignature,
     pub shared_secret_public_key: CompressedPublicKey,
-    pub sender_offset_key: CompressedPublicKey,
-    pub sender_offset_nonce_key: CompressedPublicKey,
+    pub sender_offset_public_key: CompressedPublicKey,
+    pub sender_offset_public_nonce_key: CompressedPublicKey,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemberCommitmentSignature {
+    pub signature: CompressedCheckSigSchnorrSignature,
+    // Not sure if needed, but keeping for consistency
+    pub secret_key: TariKeyId,
+    pub sender_offset_key: TariKeyId,
+    pub sender_offset_nonce_key: TariKeyId,
+}
+

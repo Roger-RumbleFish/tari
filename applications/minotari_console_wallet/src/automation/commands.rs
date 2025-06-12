@@ -2723,57 +2723,9 @@ pub async fn command_runner(
 
                 let session_id = output.session_id;
 
-
                 let new_output = read_multisig_output(session_id).await?;
 
                 println!("Multisig UTXO created: {:?}", new_output);
-
-
-                // let out_path = out_dir(&output.session_id)?;
-                // fs::create_dir_all(&out_path)?; // Ensure the directory exists
-                // let out_file = out_path.join("multisig_output.json"); // Or any filename you prefer
-                // serde_json::to_writer_pretty(fs::File::create(&out_file)?, &output)?;
-                // let utxo_hashes = output.utxos
-                // .iter()
-                // .map(|utxo| utxo.hash)
-                // .collect::<Vec<_>>();
-
-
-                // let key_manager_service = wallet.key_manager_service.clone();
-                // let utxos = transaction_service.fetch_unspent_outputs(utxo_hashes).await?;
-                // // console log utxos fetched
-                // for (i, utxo) in utxos.iter().enumerate() {
-                //     let (_spending_key, value, _) = key_manager_service.try_output_key_recovery(utxo, None).await?;
-                //     println!(
-                //         "{}. Value: {}, Script: {}, Features: {:?}",
-                //         i + 1,
-                //         value,
-                //         utxo.script.to_hex(),
-                //         utxo.features
-                //     );
-                // }
-
-                // // // let utxos_len = utxos.len();
-                // println!("selected utxos {}", output.utxos.len());
-
-                // let value = tari_core::transactions::tari_amount::MicroMinotari(args.value);
-                // let public_keys: Vec<CompressedPublicKey> = args.public_keys.iter().map(|k| k.clone().into()).collect();
-
-                // let result = output_service
-                //     .create_multisig_output(value, args.recipient_address, args.m, args.n, public_keys)
-                //     .await;
-
-                //     match result {
-                //         Ok(output) => {
-                //             println!("Multisig UTXO created: {:?}", output);
-                //         },
-                //         Err(e) => {
-                //             eprintln!("Error creating multisig UTXO: {}", e);
-                //         }
-                //     }
-
-       
-                println!("Creating multisig UTXO");
             },
             CreateMultisigUtxoParty(_args) => {
                let key_manager_service = wallet.key_manager_service.clone();

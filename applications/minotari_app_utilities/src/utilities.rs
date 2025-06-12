@@ -24,6 +24,7 @@ use std::{convert::TryFrom, str::FromStr};
 
 use futures::future::Either;
 use log::*;
+use serde::{Deserialize, Serialize};
 use tari_common::exit_codes::{ExitCode, ExitError};
 use tari_common_types::{
     emoji::EmojiId,
@@ -72,7 +73,7 @@ pub fn either_to_node_id(either: Either<CommsPublicKey, NodeId>) -> NodeId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UniPublicKey(CompressedPublicKey);
 
 impl UniPublicKey {
