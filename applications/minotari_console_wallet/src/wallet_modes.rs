@@ -604,6 +604,7 @@ mod test {
         let mut export_tx = false;
         let mut import_tx = false;
         let mut whois = false;
+
         for command in commands {
             match command {
                 CliCommands::GetBalance => get_balance = true,
@@ -651,8 +652,11 @@ mod test {
                 CliCommands::FinalizeMultisigUtxoEncumber(_) => {},
                 CliCommands::FinalizeMultisigUtxoSigs(_) => {},
                 CliCommands::FinalizeMultisigUtxoSpendTx(_) => {},
-                CliCommands::CreateMultisigUtxo(_) => {},
-                CliCommands::CreateMultisigUtxoParty(_) => {},
+                CliCommands::CreateMultisigUtxoTransferLeader(_) => {},
+                CliCommands::CreateMultisigUtxo(_) => { },
+                CliCommands::Test2(_) => {},
+                CliCommands::CollectMultisigUtxoEncumber(_) => {},
+                CliCommands::CreateMultisigUtxoTransferMember(_) => {},
             }
         }
         assert!(

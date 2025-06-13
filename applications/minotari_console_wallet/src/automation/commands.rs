@@ -101,20 +101,18 @@ use tari_core::{
             TransactionOutput,
             TransactionOutputVersion,
             UnblindedOutput,
-            WalletOutput,
+            WalletOutput, WalletOutputBuilder,
         },
         transaction_key_manager::{SecretTransactionKeyManagerInterface, TariKeyId, TransactionKeyManagerInterface},
         CryptoFactories,
     },
 };
 use tari_crypto::{
-    commitment::HomomorphicCommitmentFactory,
-    dhke::DiffieHellmanSharedSecret,
-    ristretto::RistrettoSecretKey,
+    commitment::HomomorphicCommitmentFactory, compressed_key::CompressedKey, dhke::DiffieHellmanSharedSecret, ristretto::{RistrettoPublicKey, RistrettoSecretKey}
 };
 use tari_key_manager::{cipher_seed::CipherSeed, SeedWords};
 use tari_p2p::{auto_update::AutoUpdateConfig, peer_seeds::SeedPeer, PeerSeedsConfig};
-use tari_script::{push_pubkey_script, script, CompressedCheckSigSchnorrSignature};
+use tari_script::{push_pubkey_script, script, CompressedCheckSigSchnorrSignature, ExecutionStack, Opcode, TariScript};
 use tari_shutdown::Shutdown;
 use tari_utilities::{encoding::MBase58, hex::Hex, ByteArray, SafePassword};
 use tokio::{
@@ -122,7 +120,7 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::automation::multisig::{create_multisig_output, create_multisig_party_member_output, read_multisig_output, save_multisig_output, save_multisig_party_output};
+use crate::automation::multisig::{collect_multisig_utxo_encumber, create_multisig_output, create_multisig_party_member_output, get_utxo_by_commitment_hash, is_multisig_utxo, make_utxo_multisig, read_multisig_output, save_multisig_output, save_multisig_party_output, select_utxos_for_amount};
 
 use super::error::CommandError;
 use crate::{
@@ -2135,7 +2133,7 @@ pub async fn command_runner(
                     } else {
                         for (i, utxo) in unblinded_utxos.iter().enumerate() {
                             println!(
-                                "{}. Value: {}, Spending Key: {:?}, Script Key: {:?}, Features: {}",
+                                "{}. Value: {}, Spending Key: {:?}, Script Key: {:?}, Features: {}, Commitment hash: {}, isMultisig: {}",
                                 i + 1,
                                 utxo.0.value,
                                 if args.with_private_keys {
@@ -2148,7 +2146,9 @@ pub async fn command_runner(
                                 } else {
                                     "*hidden*".to_string()
                                 },
-                                utxo.0.features
+                                utxo.0.features,
+                                utxo.1.to_hex(),
+                                is_multisig_utxo(&utxo.0.script)
                             );
                         }
                     }
@@ -2715,9 +2715,23 @@ pub async fn command_runner(
                 fs::remove_dir_all(temp_path)?;
             },
 
-            CreateMultisigUtxo(args) => {
+            Test2(args) => {
                 let mut output_service = wallet.output_manager_service.clone();
-           
+                let utxos = output_service.get_unspent_outputs().await
+                    .map_err(CommandError::OutputManagerError)?;
+
+                let utxo = get_utxo_by_commitment_hash(&utxos, args.value);
+
+               println!("Utxo found: {:?}", utxo);
+            },
+
+            CollectMultisigUtxoEncumber(args) => {
+                collect_multisig_utxo_encumber(args.session_id).await?;
+                println!("Collecting multisig UTXO encumber");
+            },
+
+            CreateMultisigUtxoTransferLeader(args) => {
+                let mut output_service = wallet.output_manager_service.clone();
                 let output = create_multisig_output(&mut output_service, args).await?;
                 save_multisig_output(output.clone()).await?;
 
@@ -2727,13 +2741,51 @@ pub async fn command_runner(
 
                 println!("Multisig UTXO created: {:?}", new_output);
             },
-            CreateMultisigUtxoParty(_args) => {
+            CreateMultisigUtxoTransferMember(_args) => {
                let key_manager_service = wallet.key_manager_service.clone();
                 let output = create_multisig_party_member_output(key_manager_service, _args.session_id.clone()).await?;
 
                 save_multisig_party_output(output).await?;
                 println!("Creating multisig UTXO party member output");
             },
+
+            CreateMultisigUtxo(args) => {
+                let mut transaction_service = wallet
+                    .transaction_service.clone();
+
+                let mut output_service = wallet.output_manager_service.clone();
+
+                let utxos = output_service.get_unspent_outputs().await
+                    .map_err(CommandError::OutputManagerError)?;
+
+                 let utxo = get_utxo_by_commitment_hash(&utxos, args.utxo_commitment_hash)
+                     .ok_or(CommandError::General("UTXO not found by commitment hash".to_string()))?;
+
+                 let public_keys = args.public_keys.iter().map(|pk| pk.as_compressed().clone()).collect::<Vec<_>>();
+
+
+                let result = make_utxo_multisig(
+                    &mut output_service,
+                    &mut transaction_service,
+                    wallet.key_manager_service.clone(),
+                    utxo.clone(),
+                    args.m,
+                    args.n,
+                    public_keys,
+                ).await;
+
+               match result {
+                   Ok(tx_id) => {
+                        tx_ids.push(tx_id);
+                        debug!(target: LOG_TARGET, "Utxo changed to multisig with tx_id {}", tx_id);
+                        println!("Utxo changed to multisig succeeded");
+                    },
+                    Err(e) => {
+                        eprintln!("Error creating multisig UTXO: {}", e);
+                    }
+                }
+            },
+      
             FinalizeMultisigUtxoEncumber(_args) => {
                 print!("Finalizing multisig UTXO encumber");
             },

@@ -1,32 +1,29 @@
 use chrono::Utc;
 
 use tari_common_types::{
-    key_branches::TransactionKeyManagerBranch,
-    tari_address::TariAddress,
-    types::{CompressedCommitment, CompressedPublicKey},
+    key_branches::TransactionKeyManagerBranch, tari_address::TariAddress, transaction::TxId, types::{CompressedCommitment, CompressedPublicKey}
 };
 
-use tari_script::CompressedCheckSigSchnorrSignature;
+use tari_script::{CompressedCheckSigSchnorrSignature, ExecutionStack, Opcode, TariScript};
 use tari_utilities::hex::{self, Hex};
 
-use tari_crypto::keys::PublicKey;
+use tari_crypto::{compressed_key::CompressedKey, keys::PublicKey, ristretto::RistrettoPublicKey};
 
 use std::fs;
 use minotari_wallet::{
-    output_manager_service::handle::OutputManagerHandle,
-    storage::sqlite_utilities::WalletDbConnection,
+    output_manager_service::{handle::OutputManagerHandle, storage::models::DbWalletOutput, UtxoSelectionCriteria},
+    storage::sqlite_utilities::WalletDbConnection, transaction_service::handle::TransactionServiceHandle,
 };
 use tari_core::transactions::{
-    tari_amount,
-    transaction_key_manager::{
+    tari_amount::{self, MicroMinotari, Minotari}, transaction_components::{encrypted_data::PaymentId, WalletOutputBuilder}, transaction_key_manager::{
         storage::sqlite_db::TransactionKeyManagerSqliteDatabase,
         TariKeyId,
         TransactionKeyManagerInterface,
         TransactionKeyManagerWrapper,
-    },
+    }
 };
 use tari_utilities::ByteArray;
-use crate::{automation::{error::CommandError, utils::out_dir}, cli::{ LeaderCommitmentSignature, MemberCommitmentSignature, MultisigLeaderPartyOutput, MultisigMemberPartyOutput, MultisigPartyOutput}};
+use crate::{automation::{error::CommandError, utils::out_dir}, cli::{ CreateMultisigUtxoTransferLeaderArgs, LeaderCommitmentSignature, MemberCommitmentSignature, MultisigLeaderPartyOutput, MultisigMemberPartyOutput, MultisigPartyOutput}};
 use crate::cli::{CreateMultisigUtxoArgs, MultisigOutput};
 
 pub async fn select_utxos_for_amount(
@@ -36,8 +33,8 @@ pub async fn select_utxos_for_amount(
     let mut utxos = output_service.get_unspent_outputs().await
         .map_err(CommandError::OutputManagerError)?;
 
-    // Sort UTXOs by value (descending)
-    utxos.sort_by(|a, b| b.wallet_output.value.cmp(&a.wallet_output.value));
+    // Sort UTXOs by value (ascending)
+    utxos.sort_by(|a, b| a.wallet_output.value.cmp(&b.wallet_output.value));
 
     let mut selected_utxos = Vec::new();
     let mut total = 0u64;
@@ -61,19 +58,27 @@ pub async fn select_utxos_for_amount(
     Ok(selected_utxos)
 }
 
-pub async fn create_multisig_output(output_service: &mut OutputManagerHandle, args: CreateMultisigUtxoArgs) -> Result<MultisigOutput, CommandError> {
+pub async fn create_multisig_output(output_service: &mut OutputManagerHandle, args: CreateMultisigUtxoTransferLeaderArgs) -> Result<MultisigOutput, CommandError> {
     let date_time = Utc::now();
     let session_id = format!("{}", date_time.format("%Y%m%d%H%M%S"));
-    let utxos = select_utxos_for_amount(output_service, args.value).await?;
 
+    let utxos = output_service.get_unspent_outputs().await
+        .map_err(CommandError::OutputManagerError)?;
 
+    let selected_utxo = get_utxo_by_commitment_hash(&utxos, args.utxo_commitment_hash.clone()).ok_or(CommandError::General(format!(
+        "UTXO with commitment hash {} not found",
+        args.utxo_commitment_hash
+    )))?;
 
-    // get hash from utxos
-    let utxo_hashes = utxos.iter().map(|utxo| utxo.hash.to_hex()).collect::<Vec<_>>();
+    let utxo_hashes = vec![selected_utxo.hash.to_hex()];
+    let utxo_commitments = vec![selected_utxo.commitment.to_hex()];
 
-    let utxo_commitments = utxos.iter()
-        .map(|utxo| utxo.commitment.to_hex())
-        .collect::<Vec<_>>();
+    // Bring back later on when resolve multiple utxos
+    // let utxo_hashes = utxos.iter().map(|utxo| utxo.hash.to_hex()).collect::<Vec<_>>();
+
+    // let utxo_commitments = utxos.iter()
+    //     .map(|utxo| utxo.commitment.to_hex())
+    //     .collect::<Vec<_>>();
 
     let multisig_output = MultisigOutput {
         session_id: session_id.clone(),
@@ -83,7 +88,7 @@ pub async fn create_multisig_output(output_service: &mut OutputManagerHandle, ar
         minimum_signatures: args.m,
         recipient_address: args.recipient_address.clone(),
         parties_public_keys: args.public_keys,
-        value: tari_amount::MicroMinotari::from(args.value),
+        value: selected_utxo.wallet_output.value,
     };
 
 
@@ -232,4 +237,104 @@ pub async fn read_multisig_output(session_id: String) -> Result<MultisigOutput, 
         .map_err(|e| CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
     
     Ok(multisig_output)
+}
+
+pub fn is_multisig_utxo(tari_script: &TariScript) -> bool {
+    tari_script.script.iter().any(|op| matches!(op, Opcode::CheckMultiSigVerifyAggregatePubKey(..)))
+}
+
+pub fn get_utxo_by_commitment_hash(
+    utxos: &[minotari_wallet::output_manager_service::storage::models::DbWalletOutput],
+    commitment_hash: String,
+) -> Option<&minotari_wallet::output_manager_service::storage::models::DbWalletOutput> {
+    utxos.iter().find(|utxo| utxo.commitment.to_hex() == commitment_hash)
+}
+
+pub async fn make_utxo_multisig(
+    output_service: &mut OutputManagerHandle,
+    transaction_service: &mut TransactionServiceHandle,
+    key_manager_service: TransactionKeyManagerWrapper<TransactionKeyManagerSqliteDatabase<WalletDbConnection>>,
+    utxo: DbWalletOutput,
+    m: u8,
+    n: u8,
+    public_keys: Vec<CompressedKey<RistrettoPublicKey>>,
+) -> Result<TxId, CommandError> {
+        let commitment_bytes: [u8; 32] = utxo.commitment.as_bytes().try_into()
+            .map_err(|_| CommandError::General("Commitment is not 32 bytes".to_string()))?;
+        let message: Box<[u8; 32]> = Box::new(commitment_bytes);
+    
+
+        let script = TariScript::new(vec![
+            Opcode::CheckMultiSigVerifyAggregatePubKey(m, n, public_keys, message),
+        ])?;
+
+        let script_key = key_manager_service
+            .get_next_key(TransactionKeyManagerBranch::SenderOffset.get_branch_key())
+            .await
+            .unwrap();
+
+
+        let utxo_value = MicroMinotari::from(utxo.wallet_output.value);
+        let commitment_mask = key_manager_service.get_next_key(TransactionKeyManagerBranch::CommitmentMask.get_branch_key()).await.unwrap();
+        let input_selection = UtxoSelectionCriteria::default();
+        let payment_id = PaymentId::default();
+        // Create the unblinded output
+        let output_builder = WalletOutputBuilder::new(utxo_value, commitment_mask.key_id)
+            .with_script(script.clone())
+            .with_script_key(script_key.key_id)
+            .with_input_data(ExecutionStack::default());
+
+
+        let (tx_id, transaction) = output_service.create_send_to_self_with_output(vec![output_builder], MicroMinotari::from(1), input_selection, payment_id.clone())
+        .await
+        .map_err(|e| CommandError::General(format!("Failed to send to self: {}", e)))?;
+
+        transaction_service
+            .submit_transaction(tx_id, transaction, utxo_value, payment_id.clone())
+            .await
+            .map_err(|e| CommandError::General(format!("Failed to submit transaction: {}", e)))?;
+
+         Ok(tx_id)
+}
+
+pub async fn collect_multisig_utxo_encumber(session_id: String) -> Result<(), CommandError> {
+    let mut signatures = Vec::new();
+    let mut public_nonces = Vec::new();
+    let mut public_keys = Vec::new();
+
+    let output: MultisigOutput = read_multisig_output(session_id.clone()).await
+        .map_err(|e| CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+
+
+    let user_keys = output.parties_public_keys;
+
+    let out_dir = std::path::Path::new("/wallet_data");
+
+    for pubkey in &user_keys {
+        let member_file = out_dir.join(format!(
+            "multisig_party_output-member-{}-{}.json",
+            session_id,
+            pubkey.as_compressed().to_hex()
+        ));
+        if !member_file.exists() {
+            return Err(CommandError::General(format!(
+                "Missing member file: {}",
+                member_file.display()
+            )));
+        }
+    
+        let file: fs::File = std::fs::File::open(&member_file)?;
+        let member_output: MultisigMemberPartyOutput = serde_json::from_reader(file)
+            .map_err(|e| CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+
+        for sig in member_output.commitment_signatures {
+            signatures.push(sig.signature.clone());
+            public_nonces.push(sig.sender_offset_nonce_key.clone());
+            public_keys.push(member_output.member_public_key.clone());
+        }
+    }
+
+
+    print!("Collected {} signatures, {} public nonces, and {} public keys for session {}", signatures.len(), public_nonces.len(), public_keys.len(), session_id);
+    Ok(())
 }

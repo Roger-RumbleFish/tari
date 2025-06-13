@@ -182,8 +182,11 @@ pub enum CliCommands {
     FinalizeMultisigUtxoEncumber(FinalizeMultisigUtxoEncumberArgs),
     FinalizeMultisigUtxoSigs(FinalizeMultisigUtxoSigsArgs),
     FinalizeMultisigUtxoSpendTx(FinalizeMultisigUtxoSpendTxArgs),
-    CreateMultisigUtxoParty(CreateMultisigUtxoPartyArgs),
+    CollectMultisigUtxoEncumber(CollectMultisigUtxoEncumberArgs),
+    CreateMultisigUtxoTransferMember(CreateMultisigUtxoTransferMemberArgs),
+    CreateMultisigUtxoTransferLeader(CreateMultisigUtxoTransferLeaderArgs),
     CreateMultisigUtxo(CreateMultisigUtxoArgs),
+    Test2(TestArgs),
 }
 
 #[derive(Debug, Args, Clone)]
@@ -532,18 +535,33 @@ pub struct FinalizeMultisigUtxoSpendTxArgs {
     pub member: Vec<String>,
 }
 
-/// This step is run by each party member and generates indexed script inputs for the leader for all bridge UTXOs
+
+
+
 #[derive(Debug, Args, Clone)]
-pub struct CreateMultisigUtxoPartyArgs {
+pub struct CollectMultisigUtxoEncumberArgs {
     #[clap(long)]
     pub(crate) session_id: String,
 }
 
-/// This step is run by the leader and generates the bridge UTXOs
+
+/// This step is run by each party member and generates indexed script inputs for the leader for all bridge UTXOs
 #[derive(Debug, Args, Clone)]
-pub struct CreateMultisigUtxoArgs {
-    #[clap(long, default_value = "2")]
-    pub value: u64,
+pub struct CreateMultisigUtxoTransferMemberArgs {
+    #[clap(long)]
+    pub(crate) session_id: String,
+}
+
+// /// This step is run by the leader and generates the bridge UTXOs
+#[derive(Debug, Args, Clone)]
+pub struct CreateMultisigUtxoTransferLeaderArgs {
+    // #[clap(long, default_value = "2")]
+    // pub value: u64,
+
+    #[clap(long)]
+    //  The commitment hash of the multisig UTXO
+    pub utxo_commitment_hash: String,
+
 
     #[clap(long)]
     // list of public keys of the parties involved in the multisig
@@ -559,6 +577,32 @@ pub struct CreateMultisigUtxoArgs {
     #[clap(long)]
     // list of public keys of the parties involved in the multisig
     pub public_keys: Vec<UniPublicKey>,
+}
+
+/// This step is run by the leader and generates the bridge UTXOs
+#[derive(Debug, Args, Clone)]
+pub struct CreateMultisigUtxoArgs {
+    #[clap(long)]
+    // list of public keys of the parties involved in the multisig
+    pub utxo_commitment_hash: String,
+
+    // How many parties are involved in the multisig
+    #[clap(long, default_value = "2")]
+    pub n: u8,
+    // How many signatures are required to spend the multisig UTXO
+    #[clap(long, default_value = "2")]
+    pub m: u8,
+
+    #[clap(long)]
+    // list of public keys of the parties involved in the multisig
+    pub public_keys: Vec<UniPublicKey>,
+}
+
+/// This step is run by the leader and generates the bridge UTXOs
+#[derive(Debug, Args, Clone)]
+pub struct TestArgs {
+    #[clap(long, default_value = "")]
+    pub value: String,
 }
 
 

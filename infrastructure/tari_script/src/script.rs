@@ -65,7 +65,7 @@ pub type ScriptOpcodes = MaxSizeVec<Opcode, 128>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TariScript {
-    script: ScriptOpcodes,
+    pub script: ScriptOpcodes,
 }
 
 impl BorshSerialize for TariScript {
