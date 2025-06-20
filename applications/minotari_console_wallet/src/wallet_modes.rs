@@ -654,7 +654,7 @@ mod test {
                 CliCommands::FinalizeMultisigUtxoSpendTx(_) => {},
                 CliCommands::CreateMultisigUtxoTransferLeader(_) => {},
                 CliCommands::CreateMultisigUtxo(_) => { },
-                CliCommands::Test2(_) => {},
+                CliCommands::SignUtxoMember(_) => {},
                 CliCommands::CollectMultisigUtxoEncumber(_) => {},
                 CliCommands::CreateMultisigUtxoTransferMember(_) => {},
             }

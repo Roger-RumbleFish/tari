@@ -117,12 +117,10 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::automation::multisig::{collect_multisig_utxo_encumber, create_multisig_output, create_multisig_party_member_output, get_utxo_by_commitment_hash, is_multisig_utxo, make_utxo_multisig, read_multisig_output, save_multisig_output, save_multisig_party_output, save_multisig_utxo_encumber};
-
 use super::error::CommandError;
 use crate::{
     automation::{
-        utils::{
+        multisig::{encumber::collect_multisig_utxo_encumber, io::{read_multisig_output, save_multisig_output, save_multisig_party_output, save_multisig_utxo_encumber}, party::{create_multisig_party_member_output, sign_multisig_utxo_by_member}, script::{get_utxo_by_commitment_hash, is_multisig_utxo}, session::{create_multisig_output, make_utxo_multisig}}, utils::{
             create_pre_mine_output_dir,
             get_file_name,
             move_session_file_to_session_dir,
@@ -132,19 +130,7 @@ use crate::{
             read_verify_session_info,
             write_json_object_to_file_as_line,
             write_to_json_file,
-        },
-        PreMineSpendStep1SessionInfo,
-        PreMineSpendStep2OutputsForLeader,
-        PreMineSpendStep2OutputsForSelf,
-        PreMineSpendStep3OutputsForParties,
-        PreMineSpendStep3OutputsForSelf,
-        PreMineSpendStep4OutputsForLeader,
-        RecipientInfo,
-        Step2OutputsForLeader,
-        Step2OutputsForSelf,
-        Step3OutputsForParties,
-        Step3OutputsForSelf,
-        Step4OutputsForLeader,
+        }, PreMineSpendStep1SessionInfo, PreMineSpendStep2OutputsForLeader, PreMineSpendStep2OutputsForSelf, PreMineSpendStep3OutputsForParties, PreMineSpendStep3OutputsForSelf, PreMineSpendStep4OutputsForLeader, RecipientInfo, Step2OutputsForLeader, Step2OutputsForSelf, Step3OutputsForParties, Step3OutputsForSelf, Step4OutputsForLeader
     },
     cli::{CliCommands, CliRecipientInfo, MakeItRainTransactionType},
     init::init_wallet,
@@ -2711,14 +2697,10 @@ pub async fn command_runner(
                 fs::remove_dir_all(temp_path)?;
             },
 
-            Test2(args) => {
-                let mut output_service = wallet.output_manager_service.clone();
-                let utxos = output_service.get_unspent_outputs().await
-                    .map_err(CommandError::OutputManagerError)?;
-
-                let utxo = get_utxo_by_commitment_hash(&utxos, args.value);
-
-               println!("Utxo found: {:?}", utxo);
+            SignUtxoMember(args) => {
+                let own_address: TariAddress = wallet.get_wallet_one_sided_address().await?;
+                sign_multisig_utxo_by_member(args.session_id.clone(), own_address).await?;
+                println!("Signing multisig UTXO party member output");
             },
 
             CollectMultisigUtxoEncumber(args) => {
@@ -2771,6 +2753,7 @@ pub async fn command_runner(
 
                 println!("Multisig UTXO created: {:?}", new_output);
             },
+            
             CreateMultisigUtxoTransferMember(_args) => {
                let key_manager_service = wallet.key_manager_service.clone();
                 let output = create_multisig_party_member_output(key_manager_service, _args.session_id.clone()).await?;
