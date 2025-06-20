@@ -156,6 +156,8 @@ pub enum OutputManagerRequest {
     CreateClaimShaAtomicSwapTransaction(HashOutput, CompressedPublicKey, MicroMinotari),
     CreateHtlcRefundTransaction(HashOutput, MicroMinotari),
     GetOutputInfoByTxId(TxId),
+    FetchUnspentOutputs(Vec<HashOutput>),
+    ConfirmEncumberance(TxId),
 }
 
 impl fmt::Display for OutputManagerRequest {
@@ -285,6 +287,8 @@ impl fmt::Display for OutputManagerRequest {
             ),
 
             GetOutputInfoByTxId(t) => write!(f, "GetOutputInfoByTxId: {}", t),
+            FetchUnspentOutputs(hashes) => write!(f, "FetchUnspentOutputs: {:?}", hashes),
+            ConfirmEncumberance(tx_id) => write!(f, "ConfirmEncumberance: {}", tx_id),
         }
     }
 }
@@ -338,6 +342,8 @@ pub enum OutputManagerResponse {
     ClaimHtlcTransaction((TxId, MicroMinotari, MicroMinotari, Transaction)),
     OutputInfoByTxId(OutputInfoByTxId),
     CoinPreview((Vec<MicroMinotari>, MicroMinotari)),
+    FetchUnspentOutputs(Vec<TransactionOutput>),
+    ConfirmEncumberance,
 }
 
 pub type OutputManagerEventSender = broadcast::Sender<Arc<OutputManagerEvent>>;
@@ -1000,4 +1006,23 @@ impl OutputManagerHandle {
             _ => Err(OutputManagerError::UnexpectedApiResponse),
         }
     }
+
+   pub async fn fetch_unspent_outputs_from_node(&mut self, hashes: Vec<HashOutput>) -> Result<Vec<TransactionOutput>, OutputManagerError> {
+        match self
+            .handle
+            .call(OutputManagerRequest::FetchUnspentOutputs(hashes))
+            .await??
+        {
+            OutputManagerResponse::FetchUnspentOutputs(outputs) => Ok(outputs),
+            _ => Err(OutputManagerError::UnexpectedApiResponse),
+        }
+    }
+    pub async fn confirm_encumberance(&mut self, tx_id: TxId) -> Result<(), OutputManagerError> {
+        self.handle
+            .call(OutputManagerRequest::ConfirmEncumberance(tx_id))
+            .await??;
+
+        Ok(())
+    }
+
 }

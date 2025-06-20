@@ -538,6 +538,14 @@ where
                 let output_statuses_by_tx_id = self.get_output_info_by_tx_id(tx_id)?;
                 Ok(OutputManagerResponse::OutputInfoByTxId(output_statuses_by_tx_id))
             },
+            OutputManagerRequest::FetchUnspentOutputs(hashes) => {
+                let outputs = self.fetch_unspent_outputs_from_node(hashes).await?;
+                Ok(OutputManagerResponse::FetchUnspentOutputs(outputs))
+            }
+            OutputManagerRequest::ConfirmEncumberance(tx_id) => {
+                self.confirm_encumberance(tx_id)?;
+                Ok(OutputManagerResponse::ConfirmEncumberance)
+            },
         }
     }
 
@@ -2129,7 +2137,7 @@ where
 
     /// Confirm that a transaction has finished being negotiated between parties so the short-term encumberance can be
     /// made official
-    fn confirm_encumberance(&mut self, tx_id: TxId) -> Result<(), OutputManagerError> {
+    pub fn confirm_encumberance(&mut self, tx_id: TxId) -> Result<(), OutputManagerError> {
         self.resources.db.confirm_encumbered_outputs(tx_id)?;
 
         Ok(())
@@ -3077,7 +3085,7 @@ where
         Ok(stp)
     }
 
-    async fn fetch_unspent_outputs_from_node(
+    pub async fn fetch_unspent_outputs_from_node(
         &mut self,
         hashes: Vec<HashOutput>,
     ) -> Result<Vec<TransactionOutput>, OutputManagerError> {

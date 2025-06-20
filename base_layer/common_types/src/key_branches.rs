@@ -40,6 +40,7 @@ pub enum TransactionKeyManagerBranch {
     Spend = Branch::Spend as u8,
     RandomKey = Branch::RandomKey as u8,
     PreMine = Branch::PreMine as u8,
+    Multisig = Branch::Multisig as u8,
 }
 
 pub const DATA_ENCRYPTION: &str = "data encryption";
@@ -51,6 +52,7 @@ pub const SENDER_OFFSET: &str = "sender offset";
 pub const ONE_SIDED_SENDER_OFFSET: &str = "one sided sender offset";
 pub const RANDOM_KEY: &str = "random key";
 pub const PRE_MINE: &str = "pre-mine";
+pub const MULTISIG: &str = "multisig";
 
 impl TransactionKeyManagerBranch {
     /// Warning: Changing these strings will affect the backwards compatibility of the wallet with older databases or
@@ -67,6 +69,7 @@ impl TransactionKeyManagerBranch {
             TransactionKeyManagerBranch::RandomKey => RANDOM_KEY.to_string(),
             TransactionKeyManagerBranch::Spend => WALLET_COMMS_AND_SPEND_KEY_BRANCH.to_string(),
             TransactionKeyManagerBranch::PreMine => PRE_MINE.to_string(),
+            TransactionKeyManagerBranch::Multisig => MULTISIG.to_string(),
         }
     }
 
@@ -82,6 +85,7 @@ impl TransactionKeyManagerBranch {
             RANDOM_KEY => TransactionKeyManagerBranch::RandomKey,
             WALLET_COMMS_AND_SPEND_KEY_BRANCH => TransactionKeyManagerBranch::Spend,
             PRE_MINE => TransactionKeyManagerBranch::PreMine,
+            MULTISIG => TransactionKeyManagerBranch::Multisig,
             _ => TransactionKeyManagerBranch::Nonce,
         }
     }
@@ -102,6 +106,7 @@ impl TransactionKeyManagerBranch {
             Some(Branch::Spend) => Some(TransactionKeyManagerBranch::Spend),
             Some(Branch::RandomKey) => Some(TransactionKeyManagerBranch::RandomKey),
             Some(Branch::PreMine) => Some(TransactionKeyManagerBranch::PreMine),
+            Some(Branch::Multisig) => Some(TransactionKeyManagerBranch::Multisig),
             None => None,
         }
     }
@@ -124,7 +129,7 @@ mod test {
     use minotari_ledger_wallet_common::common_types::Branch;
 
     use crate::{
-        key_branches::{
+     key_branches::{
             TransactionKeyManagerBranch,
             COMMITMENT_MASK,
             DATA_ENCRYPTION,
@@ -135,6 +140,7 @@ mod test {
             PRE_MINE,
             RANDOM_KEY,
             SENDER_OFFSET,
+            MULTISIG,
         },
         WALLET_COMMS_AND_SPEND_KEY_BRANCH,
     };
@@ -185,6 +191,11 @@ mod test {
                 RANDOM_KEY,
             ),
             (Branch::PreMine as u8, TransactionKeyManagerBranch::PreMine, PRE_MINE),
+            (
+                Branch::Multisig as u8,
+                TransactionKeyManagerBranch::Multisig,
+                MULTISIG,
+            ),
         ];
 
         for (expected_byte, branch, key) in &mappings {
@@ -244,6 +255,12 @@ mod test {
                     assert_eq!(TransactionKeyManagerBranch::from_key(key), *branch);
                 },
                 TransactionKeyManagerBranch::PreMine => {
+                    assert_eq!(branch.as_byte(), *expected_byte);
+                    assert_eq!(TransactionKeyManagerBranch::from_byte(*expected_byte), Some(*branch));
+                    assert_eq!(&branch.get_branch_key(), *key);
+                    assert_eq!(TransactionKeyManagerBranch::from_key(key), *branch);
+                },
+                TransactionKeyManagerBranch::Multisig => {
                     assert_eq!(branch.as_byte(), *expected_byte);
                     assert_eq!(TransactionKeyManagerBranch::from_byte(*expected_byte), Some(*branch));
                     assert_eq!(&branch.get_branch_key(), *key);

@@ -109,6 +109,7 @@ pub enum Branch {
     Spend = 0x07,
     RandomKey = 0x08,
     PreMine = 0x09,
+    Multisig = 0x0A,
 }
 
 impl Branch {
@@ -128,6 +129,7 @@ impl Branch {
             0x07 => Some(Branch::Spend),
             0x08 => Some(Branch::RandomKey),
             0x09 => Some(Branch::PreMine),
+            0x0A => Some(Branch::Multisig),
             _ => None,
         }
     }
@@ -298,6 +300,7 @@ mod test {
             (0x07, Branch::Spend),
             (0x08, Branch::RandomKey),
             (0x09, Branch::PreMine),
+            (0x0A, Branch::Multisig),
         ];
 
         for (expected_byte, branch) in &mappings {
@@ -339,6 +342,10 @@ mod test {
                     assert_eq!(Branch::from_byte(*expected_byte), Some(*branch));
                 },
                 Branch::PreMine => {
+                    assert_eq!(branch.as_byte(), *expected_byte);
+                    assert_eq!(Branch::from_byte(*expected_byte), Some(*branch));
+                },
+                Branch::Multisig => {
                     assert_eq!(branch.as_byte(), *expected_byte);
                     assert_eq!(Branch::from_byte(*expected_byte), Some(*branch));
                 },

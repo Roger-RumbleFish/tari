@@ -8,6 +8,8 @@ services:
       - ./wallet1_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
     tty: true
+    # networks:
+    #   - tari_net
 
   wallet2:
     build: .
@@ -15,7 +17,16 @@ services:
     volumes:
       - ./wallet2_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
+    # command:
+    #   [
+    #     "-p",
+    #     "wallet.custom_base_node=7ccf4e90d473388024b5152d06c3833caa1695a065f1b7dab302e7aca249c760::/ip4/127.0.0.1/tcp/40295"
+    #     # "-p",
+    #     # "wallet.custom_base_node=e408a705b07dad9059c54a513cbc1c7c7e2be9f550e53b441ceec1bff2f38649::/ip4/172.18.0.2/tcp/18142",
+    #   ]
     tty: true
+    # networks:
+    #   - tari_net
 
   wallet3:
     build: .
@@ -24,3 +35,34 @@ services:
       - ./wallet3_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
     tty: true
+    # networks:
+    #   - tari_net
+
+  minotari_node:
+    image: quay.io/tarilabs/minotari_node:v4.4.0-pre.0_development_20250612_006015a
+    restart: unless-stopped
+    volumes:
+      - ./data2:/root/.tari
+      - ./data3:/tmp/tari/logs
+    # These 2 params are required for an interactive docker-compose session
+    stdin_open: true
+    tty: true
+    expose:
+      - 18142
+    ports:
+      - "18142:18142"
+    command:
+      [
+        "--network",
+        "esmeralda",
+        "--log-path",
+        "/tmp/tari/logs",
+        "-p base_node.grpc_enabled=true",
+        "-p base_node.report_grpc_error=true",
+      ]
+    networks:
+      - tari_net
+
+networks:
+  tari_net:
+    driver: bridge
