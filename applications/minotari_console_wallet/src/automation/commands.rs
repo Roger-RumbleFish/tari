@@ -85,10 +85,7 @@ use tari_comms::{
 };
 use tari_comms_dht::{envelope::NodeDestination, DhtDiscoveryRequester};
 use tari_core::{
-    blocks::pre_mine::get_pre_mine_items,
-    covenants::Covenant,
-    one_sided::shared_secret_to_output_encryption_key,
-    transactions::{
+    blocks::pre_mine::get_pre_mine_items, consensus::ConsensusManager, covenants::Covenant, one_sided::shared_secret_to_output_encryption_key, transactions::{
         tari_amount::{uT, MicroMinotari, Minotari},
         transaction_components::{
             encrypted_data::{PaymentId, TxType},
@@ -101,18 +98,18 @@ use tari_core::{
             TransactionOutput,
             TransactionOutputVersion,
             UnblindedOutput,
-            WalletOutput, WalletOutputBuilder,
+            WalletOutput,
         },
-        transaction_key_manager::{SecretTransactionKeyManagerInterface, TariKeyId, TransactionKeyManagerInterface},
+        transaction_key_manager::{TariKeyId, TransactionKeyManagerInterface},
         CryptoFactories,
-    },
+    }
 };
 use tari_crypto::{
-    commitment::HomomorphicCommitmentFactory, compressed_key::CompressedKey, dhke::DiffieHellmanSharedSecret, ristretto::{RistrettoPublicKey, RistrettoSecretKey}
+    commitment::HomomorphicCommitmentFactory, dhke::DiffieHellmanSharedSecret, ristretto::{RistrettoSecretKey}
 };
 use tari_key_manager::{cipher_seed::CipherSeed, SeedWords};
 use tari_p2p::{auto_update::AutoUpdateConfig, peer_seeds::SeedPeer, PeerSeedsConfig};
-use tari_script::{push_pubkey_script, script, CompressedCheckSigSchnorrSignature, ExecutionStack, Opcode, TariScript};
+use tari_script::{push_pubkey_script, CompressedCheckSigSchnorrSignature};
 use tari_shutdown::Shutdown;
 use tari_utilities::{encoding::MBase58, hex::Hex, ByteArray, SafePassword};
 use tokio::{
@@ -120,7 +117,7 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::automation::multisig::{collect_multisig_utxo_encumber, create_multisig_output, create_multisig_party_member_output, get_utxo_by_commitment_hash, is_multisig_utxo, make_utxo_multisig, read_multisig_output, save_multisig_output, save_multisig_party_output, select_utxos_for_amount};
+use crate::automation::multisig::{collect_multisig_utxo_encumber, create_multisig_output, create_multisig_party_member_output, get_utxo_by_commitment_hash, is_multisig_utxo, make_utxo_multisig, read_multisig_output, save_multisig_output, save_multisig_party_output, save_multisig_utxo_encumber};
 
 use super::error::CommandError;
 use crate::{
@@ -1014,7 +1011,6 @@ pub async fn command_runner(
                 }
             },
             PreMineStartParty(args) => {
-                // TODO roger
                 let mut alias = args.alias.clone();
                 loop {
                     if alias.is_empty() || alias.contains(" ") {
@@ -2148,7 +2144,7 @@ pub async fn command_runner(
                                 },
                                 utxo.0.features,
                                 utxo.1.to_hex(),
-                                is_multisig_utxo(&utxo.0.script)
+                                is_multisig_utxo(&utxo.0.script),
                             );
                         }
                     }
@@ -2726,7 +2722,41 @@ pub async fn command_runner(
             },
 
             CollectMultisigUtxoEncumber(args) => {
-                collect_multisig_utxo_encumber(args.session_id).await?;
+                let consensus_manager = ConsensusManager::builder(wallet.network.as_network())
+                .build().map_err(|e| CommandError::General(e.to_string()))?;
+                
+                let output_service = wallet.output_manager_service.clone();
+
+                let client = wallet
+                    .wallet_connectivity
+                    .clone()
+                    .obtain_base_node_wallet_rpc_client_timeout(Duration::from_secs(10))
+                    .await;
+
+                let height = match client {
+                    Some(mut client) => client
+                        .get_tip_info()
+                        .await
+                        .ok()
+                        .and_then(|t| t.metadata)
+                        .map(|m| m.best_block_height),
+                    None => None,
+                }
+                .ok_or(CommandError::General("Could not get tip height".to_string()))?;
+
+
+                let own_address: TariAddress = wallet.get_wallet_one_sided_address().await?;
+
+                let outputs = collect_multisig_utxo_encumber(
+                    output_service,
+                    wallet.key_manager_service.clone(),
+                    &consensus_manager.consensus_constants(height),
+                    args.session_id,
+                    own_address
+                ).await?;
+
+
+                save_multisig_utxo_encumber(outputs).await?;
                 println!("Collecting multisig UTXO encumber");
             },
 
@@ -2754,6 +2784,10 @@ pub async fn command_runner(
                     .transaction_service.clone();
 
                 let mut output_service = wallet.output_manager_service.clone();
+
+                if (args.n as usize) != args.public_keys.len() {
+                    return Err(CommandError::General("n must be equal to the number of public keys".to_string()));
+                }
 
                 let utxos = output_service.get_unspent_outputs().await
                     .map_err(CommandError::OutputManagerError)?;
@@ -2998,7 +3032,6 @@ fn get_embedded_pre_mine_outputs(
     } else {
         get_all_embedded_pre_mine_outputs()?
     };
-
     let mut fetched_outputs = Vec::with_capacity(output_indexes.len());
     for index in output_indexes {
         if index >= utxos.len() {

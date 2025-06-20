@@ -32,11 +32,11 @@ use clap::{Args, Parser, Subcommand};
 use minotari_app_utilities::{common_cli_args::CommonCliArgs, utilities::UniPublicKey};
 use serde::{Deserialize, Serialize};
 use tari_common::configuration::{ConfigOverrideProvider, Network};
-use tari_common_types::{tari_address::TariAddress, types::{CompressedPublicKey, FixedHash}};
+use tari_common_types::{tari_address::TariAddress, types::{CompressedCommitment, CompressedPublicKey}};
 use tari_comms::multiaddr::Multiaddr;
-use tari_core::transactions::{tari_amount::{self, MicroMinotari}, transaction_key_manager::TariKeyId};
+use tari_core::transactions::{tari_amount::{self, MicroMinotari}, transaction_components::{EncryptedData, OutputFeatures}, transaction_key_manager::TariKeyId};
 use tari_key_manager::SeedWords;
-use tari_script::CompressedCheckSigSchnorrSignature;
+use tari_script::{CompressedCheckSigSchnorrSignature, ExecutionStack, TariScript};
 use tari_utilities::{
     hex::{Hex, HexError},
     SafePassword,
@@ -555,13 +555,9 @@ pub struct CreateMultisigUtxoTransferMemberArgs {
 // /// This step is run by the leader and generates the bridge UTXOs
 #[derive(Debug, Args, Clone)]
 pub struct CreateMultisigUtxoTransferLeaderArgs {
-    // #[clap(long, default_value = "2")]
-    // pub value: u64,
-
     #[clap(long)]
     //  The commitment hash of the multisig UTXO
     pub utxo_commitment_hash: String,
-
 
     #[clap(long)]
     // list of public keys of the parties involved in the multisig
@@ -574,7 +570,7 @@ pub struct CreateMultisigUtxoTransferLeaderArgs {
     #[clap(long, default_value = "2")]
     pub m: u8,
 
-    #[clap(long)]
+    #[clap(long, multiple = true)]
     // list of public keys of the parties involved in the multisig
     pub public_keys: Vec<UniPublicKey>,
 }
@@ -586,14 +582,15 @@ pub struct CreateMultisigUtxoArgs {
     // list of public keys of the parties involved in the multisig
     pub utxo_commitment_hash: String,
 
-    // How many parties are involved in the multisig
-    #[clap(long, default_value = "2")]
-    pub n: u8,
     // How many signatures are required to spend the multisig UTXO
     #[clap(long, default_value = "2")]
     pub m: u8,
 
-    #[clap(long)]
+    // How many parties are involved in the multisig
+    #[clap(long, default_value = "2")]
+    pub n: u8,
+
+    #[clap(long, multiple = true)]
     // list of public keys of the parties involved in the multisig
     pub public_keys: Vec<UniPublicKey>,
 }
@@ -628,6 +625,23 @@ pub struct MultisigOutput {
     pub recipient_address: TariAddress,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultisigEncumberOutput {
+    pub output_index: usize,
+    pub input_stack: ExecutionStack,
+    pub input_script: TariScript,
+    pub total_script_key: CompressedPublicKey,
+    pub script_signature_ephemeral_commitment: CompressedCommitment,
+    pub script_signature_ephemeral_pubkey: CompressedPublicKey,
+    pub output_commitment: CompressedCommitment,
+    pub sender_offset_pubkey: CompressedPublicKey,
+    pub metadata_signature_ephemeral_commitment: CompressedCommitment,
+    pub metadata_signature_ephemeral_pubkey: CompressedPublicKey,
+    pub encrypted_data: EncryptedData,
+    pub output_features: OutputFeatures,
+    pub shared_secret: CompressedPublicKey,
+}
+
 pub struct MultisigPartyOutput {
     pub leader: MultisigLeaderPartyOutput,
     pub member: MultisigMemberPartyOutput,
@@ -651,6 +665,7 @@ pub struct MultisigMemberPartyOutput {
 pub struct LeaderCommitmentSignature {
     pub signature: CompressedCheckSigSchnorrSignature,
     pub shared_secret_public_key: CompressedPublicKey,
+    pub script_nonce_key: CompressedPublicKey,
     pub sender_offset_public_key: CompressedPublicKey,
     pub sender_offset_public_nonce_key: CompressedPublicKey,
 }
@@ -658,7 +673,7 @@ pub struct LeaderCommitmentSignature {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemberCommitmentSignature {
     pub signature: CompressedCheckSigSchnorrSignature,
-    // Not sure if needed, but keeping for consistency
+    pub script_nonce_key_id: TariKeyId,
     pub secret_key: TariKeyId,
     pub sender_offset_key: TariKeyId,
     pub sender_offset_nonce_key: TariKeyId,
