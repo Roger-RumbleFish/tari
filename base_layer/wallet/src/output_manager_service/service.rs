@@ -545,8 +545,8 @@ where
                 let outputs = self.fetch_unspent_outputs_from_node(hashes).await?;
                 Ok(OutputManagerResponse::FetchUnspentOutputs(outputs))
             }
-            OutputManagerRequest::ConfirmEncumberance(tx_id) => {
-                self.confirm_encumberance(tx_id)?;
+            OutputManagerRequest::ConfirmEncumberance(tx_id, change_outputs ) => {
+                self.confirm_encumberance(tx_id, change_outputs).await?;
                 Ok(OutputManagerResponse::ConfirmEncumberance)
             },
         }

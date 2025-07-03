@@ -157,7 +157,7 @@ pub enum OutputManagerRequest {
     CreateHtlcRefundTransaction(HashOutput, MicroMinotari),
     GetOutputInfoByTxId(TxId),
     FetchUnspentOutputs(Vec<HashOutput>),
-    ConfirmEncumberance(TxId),
+    ConfirmEncumberance(TxId, Vec<WalletOutput>),
 }
 
 impl fmt::Display for OutputManagerRequest {
@@ -288,7 +288,7 @@ impl fmt::Display for OutputManagerRequest {
 
             GetOutputInfoByTxId(t) => write!(f, "GetOutputInfoByTxId: {}", t),
             FetchUnspentOutputs(hashes) => write!(f, "FetchUnspentOutputs: {:?}", hashes),
-            ConfirmEncumberance(tx_id) => write!(f, "ConfirmEncumberance: {}", tx_id),
+            ConfirmEncumberance(tx_id, change_outputs) => write!(f, "ConfirmEncumberance: {}, {:?}", tx_id, change_outputs),
         }
     }
 }
@@ -1021,9 +1021,9 @@ impl OutputManagerHandle {
             _ => Err(OutputManagerError::UnexpectedApiResponse),
         }
     }
-    pub async fn confirm_encumberance(&mut self, tx_id: TxId) -> Result<(), OutputManagerError> {
+    pub async fn confirm_encumberance(&mut self, tx_id: TxId, change_outputs: Vec<WalletOutput>) -> Result<(), OutputManagerError> {
         self.handle
-            .call(OutputManagerRequest::ConfirmEncumberance(tx_id))
+            .call(OutputManagerRequest::ConfirmEncumberance(tx_id, change_outputs))
             .await??;
 
         Ok(())
