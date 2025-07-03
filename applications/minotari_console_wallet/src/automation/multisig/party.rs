@@ -1,29 +1,29 @@
+use std::collections::HashMap;
 
 use tari_common_types::{
-    key_branches::TransactionKeyManagerBranch, tari_address::TariAddress, types::CompressedPublicKey
+    types::{CompressedCommitment, CompressedPublicKey, PrivateKey, Signature, UncompressedPublicKey}
 };
+use tari_crypto::{compressed_key::CompressedKey, dhke::DiffieHellmanSharedSecret, ristretto::RistrettoPublicKey};
+use tari_script::push_pubkey_script;
 use tari_utilities::hex::{self, Hex};
 use minotari_wallet::{
-    storage::{sqlite_utilities::WalletDbConnection}
+    storage::sqlite_utilities::WalletDbConnection, transaction_service::{handle::TransactionServiceHandle}
 };
-use tari_core::{transactions::{transaction_key_manager::{
+use tari_core::{covenants::Covenant, one_sided::shared_secret_to_output_encryption_key, transactions::{tari_amount::MicroMinotari, transaction_components::{EncryptedData, TransactionInput, TransactionInputVersion, TransactionOutput, TransactionOutputVersion}, transaction_key_manager::{
         storage::sqlite_db::TransactionKeyManagerSqliteDatabase,
-        TariKeyId,
         TransactionKeyManagerInterface,
         TransactionKeyManagerWrapper,
-    }
-}};
+    }}};
 use tari_utilities::ByteArray;
-use crate::automation::{error::CommandError, multisig::{io::{load_member_party_output, read_multisig_output}, types::{LeaderCommitmentSignature, MemberCommitmentSignature, MultisigLeaderPartyOutput, MultisigMemberPartyOutput, MultisigPartyOutput}}};
+use crate::automation::{error::CommandError, multisig::{io::{load_member_party_output, load_multisig_member_signatures, load_multisig_utxo_encumber, read_multisig_output}, script::{finalize_aggregate_utxo}, types::{LeaderCommitmentSignature, MemberCommitmentSignature, MemberMultisigSignature, MultisigLeaderPartyOutput, MultisigMemberPartyOutput, MultisigPartyOutput}}};
 
 pub async fn create_multisig_party_member_output(key_manager_service: TransactionKeyManagerWrapper<TransactionKeyManagerSqliteDatabase<WalletDbConnection>>, session_id: String) -> Result<MultisigPartyOutput, CommandError> {
     let spend_key = key_manager_service.get_spend_key().await?;
     let public_key = spend_key.pub_key.clone();
 
-    let config = read_multisig_output(session_id.clone()).await
+    let config = read_multisig_output(&session_id).await
         .map_err(|e| CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
-        print!("User public key: {}", public_key.to_hex());
     let member_public_key = config.parties_public_keys.iter()
         .find(|key| key.as_compressed().eq(&public_key))
         .ok_or(CommandError::PartyMemberNotFound)?;
@@ -34,22 +34,39 @@ pub async fn create_multisig_party_member_output(key_manager_service: Transactio
     let mut leader_commitment_signatures: Vec<LeaderCommitmentSignature> = Vec::new();
     let mut member_commitment_signatures: Vec<MemberCommitmentSignature> = Vec::new();
 
-    for (output_index, commitment_hex) in config.commitments.iter().enumerate() {
+
+    for commitment_hex in config.commitments {
         let script_nonce_key = key_manager_service.get_random_key().await?;
+        // blinding factor
         let sender_offset_key = key_manager_service.get_random_key().await?;
         let sender_offset_nonce_key = key_manager_service.get_random_key().await?;
+        let commitment_mask_key_id = key_manager_service.import_key(config.commitment_mask.clone().into()).await?;
 
-        let commitment_bytes = hex::from_hex(commitment_hex)
+
+        let spend_key = key_manager_service.get_spend_key().await?;
+
+        if spend_key.pub_key != *member_public_key.as_compressed() {
+            return Err(CommandError::InvalidArgument("Spend key does not match member public key".to_string()));
+        }
+
+        let ephemeral_pubkey = key_manager_service
+        .stealth_address_script_spending_key(&commitment_mask_key_id, member_public_key.as_compressed())
+        .await?;
+
+        let ephemeral_private_key = key_manager_service
+        .stealth_address_script_spending_key_id(&commitment_mask_key_id, &spend_key.key_id)
+        .await?;
+
+        let key_id = key_manager_service.import_key(ephemeral_private_key).await?;
+
+        let commitment = hex::from_hex(&commitment_hex)
             .map_err(|e| CommandError::InvalidArgument(format!("Invalid commitment hex: {}", e)))?;
 
-
-        let script_key_id = TariKeyId::Managed {
-            branch: TransactionKeyManagerBranch::Spend.get_branch_key(),
-            index: output_index as u64,
-        };
+        let mut commitment_bytes = [0u8; 32];
+        commitment_bytes.clone_from_slice(&commitment);
 
         let script_input_signature = key_manager_service
-            .sign_script_message(&script_key_id, &commitment_bytes)
+            .sign_script_message(&key_id, &commitment_bytes)
             .await?;
 
         // Computes a Diffie-Hellman shared secret with the recipient's public view key.
@@ -60,20 +77,21 @@ pub async fn create_multisig_party_member_output(key_manager_service: Transactio
             )
             .await?;
 
-        let shared_secret_public_key = CompressedPublicKey::from_canonical_bytes(shared_secret.as_bytes())?;
+        let dh_shared_secret_public_key = CompressedPublicKey::from_canonical_bytes(shared_secret.as_bytes())?;
 
         leader_commitment_signatures.push(LeaderCommitmentSignature {
+            ephemeral_pubkey: ephemeral_pubkey.clone(),
             signature: script_input_signature.clone(),
-            shared_secret_public_key: shared_secret_public_key,
+            dh_shared_secret_public_key: dh_shared_secret_public_key,
             script_nonce_key: script_nonce_key.pub_key,
             sender_offset_public_key: sender_offset_key.pub_key,
             sender_offset_public_nonce_key: sender_offset_nonce_key.pub_key,
         });
 
         member_commitment_signatures.push(MemberCommitmentSignature {
+            ephemeral_pubkey_id: key_id,
             signature: script_input_signature.clone(),
             script_nonce_key_id: script_nonce_key.key_id,
-            secret_key: script_key_id,
             sender_offset_key: sender_offset_key.key_id,
             sender_offset_nonce_key: sender_offset_nonce_key.key_id,
         });
@@ -94,241 +112,266 @@ pub async fn create_multisig_party_member_output(key_manager_service: Transactio
     Ok(MultisigPartyOutput { leader: multisig_leader_party_output, member: multisig_member_party_output })
 }
 
-pub async fn sign_multisig_utxo_by_member(session_id: String, own_address: TariAddress) -> Result<(), CommandError> {
-        let session_id_clone = session_id.clone();
-        let _multisig_config = read_multisig_output(session_id_clone).await?;
-        let key = own_address.public_spend_key();
-        let _member_config = load_member_party_output(&session_id, key.clone())?;
+pub async fn sign_multisig_utxo_by_member(
+    key_manager_service: TransactionKeyManagerWrapper<TransactionKeyManagerSqliteDatabase<WalletDbConnection>>,
+    session_id: String) -> Result<Vec<MemberMultisigSignature>, CommandError> {
+    let session_id_clone = session_id.clone();
+    let multisig_config = read_multisig_output(&session_id_clone).await?;
 
-        println!("Signing multisig UTXO for session: {}", session_id);
+    let key = key_manager_service.get_spend_key()
+        .await
+        .map_err(|e| CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?.pub_key;
 
-        return Ok(())
 
-        //     // Read leader input
-        //     let leader_info_indexed = read_and_verify::<PreMineSpendStep3OutputsForParties>(
-        //         &session_id,
-        //         &get_file_name(SPEND_STEP_3_PARTIES, None),
-        //         &session_info,
-        //     )?;
-        //     // Read own party info
-        //     let party_info_indexed = read_and_verify::<PreMineSpendStep2OutputsForSelf>(
-        //         &session_id,
-        //         &get_file_name(SPEND_STEP_2_SELF, None),
-        //         &session_info,
-        //     )?;
+    let config = read_multisig_output(&session_id_clone).await?;
+    let member_config = load_member_party_output(&session_id, key.clone())?;
+    let encumber_config = load_multisig_utxo_encumber(&session_id).await?;
 
-        //     // Verify index consistency
-        //     let session_info_indexes = session_info
-        //         .recipient_info
-        //         .iter()
-        //         .map(|v| v.output_to_be_spend)
-        //         .collect::<Vec<_>>();
-        //     let leader_info_indexes = leader_info_indexed
-        //         .outputs_for_parties
-        //         .iter()
-        //         .map(|v| v.output_index)
-        //         .collect::<Vec<_>>();
-        //     let party_info_indexes = party_info_indexed
-        //         .outputs_for_self
-        //         .iter()
-        //         .map(|v| v.output_index)
-        //         .collect::<Vec<_>>();
-        //     if session_info_indexes != leader_info_indexes || session_info_indexes != party_info_indexes {
-        //         eprintln!(
-        //             "\nError: Mismatched output indexes detected! session {:?} vs. leader {:?} vs. self {:?}\n",
-        //             session_info_indexes, leader_info_indexes, party_info_indexes
-        //         );
-        //         break;
-        //     }
+    let mut output_signatures: Vec<MemberMultisigSignature> = Vec::new();
 
-        //     let pre_mine_from_file =
-        //         match read_genesis_file_outputs(session_info.use_pre_mine_input_file, args.pre_mine_file_path) {
-        //             Ok(outputs) => outputs,
-        //             Err(e) => {
-        //                 eprintln!("\nError: {}\n", e);
-        //                 break;
-        //             },
-        //         };
+    for (output_index, encumber) in encumber_config.iter().enumerate() {
+        let member_info = &member_config.commitment_signatures[output_index];
 
-        //     println!();
-        //     let mut outputs_for_leader = Vec::with_capacity(party_info_indexed.outputs_for_self.len());
-        //     let mut error = false;
-        //     for (i, (leader_info, party_info)) in leader_info_indexed
-        //         .outputs_for_parties
-        //         .iter()
-        //         .zip(party_info_indexed.outputs_for_self.iter())
-        //         .enumerate()
-        //     {
-        //         let embedded_output = match get_embedded_pre_mine_outputs(
-        //             vec![party_info.output_index],
-        //             pre_mine_from_file.clone(),
-        //         ) {
-        //             Ok(outputs) => outputs[0].clone(),
-        //             Err(e) => {
-        //                 eprintln!("\nError: {}\n", e);
-        //                 error = true;
-        //                 break;
-        //             },
-        //         };
+       let commitment = CompressedCommitment::from_hex(&config.commitments[output_index])
+            .map_err(|e| CommandError::InvalidArgument(format!("Invalid commitment hex: {}", e)))?;
 
-        //         // Script signature
-        //         let challenge = TransactionInput::build_script_signature_challenge(
-        //             &TransactionInputVersion::get_current_version(),
-        //             &leader_info.script_signature_ephemeral_commitment,
-        //             &leader_info.script_signature_ephemeral_pubkey,
-        //             &leader_info.input_script,
-        //             &leader_info.input_stack,
-        //             &leader_info.total_script_key,
-        //             &embedded_output.commitment,
-        //         );
+        let challenge = TransactionInput::build_script_signature_challenge(
+            &TransactionInputVersion::get_current_version(),
+            &encumber.script_signature_ephemeral_commitment,
+            &encumber.script_signature_ephemeral_pubkey,
+            &encumber.input_script,
+            &encumber.input_stack,
+            &encumber.total_script_key,
+            &commitment,
+        );
 
-        //         let script_signature = match key_manager_service
-        //             .sign_with_nonce_and_challenge(
-        //                 &party_info.pre_mine_script_key_id,
-        //                 &party_info.script_nonce_key_id,
-        //                 &challenge,
-        //             )
-        //             .await
-        //         {
-        //             Ok(signature) => signature,
-        //             Err(e) => {
-        //                 eprintln!("\nError: Script signature SignMessage error! {}\n", e);
-        //                 error = true;
-        //                 break;
-        //             },
-        //         };
+        let script_signature = match key_manager_service
+                .sign_with_nonce_and_challenge(
+                    &member_info.ephemeral_pubkey_id,
+                    &member_info.script_nonce_key_id,
+                    &challenge,
+                )
+                .await
+            {
+                Ok(signature) => signature,
+                Err(e) => {
+                    eprintln!("\nError: Script signature SignMessage error! {}\n", e);
 
-        //         // lets verify the script
-        //         let shared_secret = match DiffieHellmanSharedSecret::<UncompressedPublicKey>::from_canonical_bytes(
-        //             leader_info.shared_secret.as_bytes(),
-        //         ) {
-        //             Ok(v) => v,
-        //             Err(e) => {
-        //                 eprintln!("\nError: Could not create shared secret from canonical bytes! {}\n", e);
-        //                 error = true;
-        //                 break;
-        //             },
-        //         };
+                    break;
+                },
+        };
 
-        //         let encryption_key = shared_secret_to_output_encryption_key(&shared_secret)?;
-        //         let (committed_value, commitment_mask_private_key, _payment_id) = match EncryptedData::decrypt_data(
-        //             &encryption_key,
-        //             &leader_info.output_commitment,
-        //             &leader_info.encrypted_data,
-        //         ) {
-        //             Ok((value, mask, id)) => (value, mask, id),
-        //             Err(e) => {
-        //                 eprintln!("\nError: Could not decrypt data! {}\n", e);
-        //                 error = true;
-        //                 break;
-        //             },
-        //         };
-        //         let commitment_mask_key_id = &key_manager_service
-        //             .import_key(commitment_mask_private_key.clone())
-        //             .await?;
-        //         match key_manager_service
-        //             .verify_mask(
-        //                 &leader_info.output_commitment,
-        //                 commitment_mask_key_id,
-        //                 committed_value.as_u64(),
-        //             )
-        //             .await
-        //         {
-        //             Ok(_) => {},
-        //             Err(e) => {
-        //                 eprintln!("\nError: Could not verify mask! {}\n", e);
-        //                 error = true;
-        //                 break;
-        //             },
-        //         }
-        //         // now lets calculate the script with stealth key
-        //         let script_spending_key = key_manager_service
-        //             .stealth_address_script_spending_key(
-        //                 commitment_mask_key_id,
-        //                 party_info.recipient_address.public_spend_key(),
-        //             )
-        //             .await?;
-        //         let script = push_pubkey_script(&script_spending_key);
+        let shared_secret = match DiffieHellmanSharedSecret::<UncompressedPublicKey>::from_canonical_bytes(
+                encumber.shared_secret.as_bytes(),
+            ) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("\nError: Could not create shared secret from canonical bytes! {}\n", e);
+                    break;
+                },
+            };
 
-        //         // Metadata signature
-        //         let script_offset = key_manager_service
-        //             .get_script_offset(&vec![party_info.pre_mine_script_key_id.clone()], &vec![party_info
-        //                 .sender_offset_key_id
-        //                 .clone()])
-        //             .await?;
-        //         let challenge = TransactionOutput::build_metadata_signature_challenge(
-        //             &TransactionOutputVersion::get_current_version(),
-        //             &script,
-        //             &leader_info.output_features,
-        //             &leader_info.sender_offset_pubkey,
-        //             &leader_info.metadata_signature_ephemeral_commitment,
-        //             &leader_info.metadata_signature_ephemeral_pubkey,
-        //             &leader_info.output_commitment,
-        //             &Covenant::default(),
-        //             &leader_info.encrypted_data,
-        //             MicroMinotari::zero(),
-        //         );
+        let encryption_key = shared_secret_to_output_encryption_key(&shared_secret)?;
 
-        //         let metadata_signature = match key_manager_service
-        //             .sign_with_nonce_and_challenge(
-        //                 &party_info.sender_offset_key_id,
-        //                 &party_info.sender_offset_nonce_key_id,
-        //                 &challenge,
-        //             )
-        //             .await
-        //         {
-        //             Ok(signature) => signature,
-        //             Err(e) => {
-        //                 eprintln!("\nError: Metadata signature SignMessage error! {}\n", e);
-        //                 error = true;
-        //                 break;
-        //             },
-        //         };
+        let (committed_value, commitment_mask_private_key, _payment_id) = match EncryptedData::decrypt_data(
+            &encryption_key,
+            &encumber.output_commitment,
+            &encumber.encrypted_data,
+        ) {
+            Ok((value, mask, id)) => (value, mask, id),
+            Err(e) => {
+                eprintln!("\nError: Could not decrypt data! {}\n", e);
+                break;
+            },
+        };
 
-        //         if script_signature.get_signature() == Signature::default().get_signature() ||
-        //             metadata_signature.get_signature() == Signature::default().get_signature()
-        //         {
-        //             eprintln!(
-        //                 "\nError: Script and/or metadata signatures not created (index {})!\n",
-        //                 party_info.output_index
-        //             );
-        //             error = true;
-        //             break;
-        //         }
+        let commitment_mask_key_id = &key_manager_service
+            .import_key(commitment_mask_private_key.clone())
+            .await?;
+        
+        match key_manager_service
+            .verify_mask(
+                &encumber.output_commitment,
+                commitment_mask_key_id,
+                committed_value.as_u64(),
+            )
+            .await
+        {
+            Ok(_) => {},
+            Err(e) => {
+                eprintln!("\nError: Could not verify mask! {}\n", e);
+                break;
+            },
+        }
 
-        //         outputs_for_leader.push(Step4OutputsForLeader {
-        //             output_index: party_info.output_index,
-        //             script_signature,
-        //             metadata_signature,
-        //             script_offset,
-        //         });
+        // now lets calculate the script with stealth key
+        let script_spending_key = key_manager_service
+            .stealth_address_script_spending_key(
+                commitment_mask_key_id,
+                &multisig_config.recipient_address.public_spend_key(),
+            )
+            .await?;
 
-        //         println!(
-        //             "  Processed {} of {} transactions",
-        //             i + 1,
-        //             leader_info_indexed.outputs_for_parties.len()
-        //         );
-        //     }
-        //     if error {
-        //         break;
-        //     }
+        let script = push_pubkey_script(&script_spending_key);
 
-        //     let out_dir = out_dir(&session_id)?;
-        //     let out_file = out_dir.join(get_file_name(
-        //         SPEND_STEP_4_LEADER,
-        //         Some(party_info_indexed.alias.clone()),
-        //     ));
-        //     write_json_object_to_file_as_line(&out_file, true, session_info.clone())?;
-        //     write_json_object_to_file_as_line(&out_file, false, PreMineSpendStep4OutputsForLeader {
-        //         outputs_for_leader,
-        //         alias: party_info_indexed.alias.clone(),
-        //     })?;
+        // Metadata signature
+        let script_offset = key_manager_service
+            .get_script_offset(&vec![member_info.ephemeral_pubkey_id.clone()], &vec![member_info.sender_offset_key.clone()])
+            .await?;
 
-        //     println!();
-        //     println!("Concluded step 4 'pre-mine-spend-input-output-sigs'");
-        //     println!(
-        //         "Send '{}' to leader for step 5",
-        //         get_file_name(SPEND_STEP_4_LEADER, Some(party_info_indexed.alias))
-        //     );
-        //     println!();
+        let challenge = TransactionOutput::build_metadata_signature_challenge(
+            &TransactionOutputVersion::get_current_version(),
+            &script,
+            &encumber.output_features,
+            &encumber.sender_offset_pubkey,
+            &encumber.metadata_signature_ephemeral_commitment,
+            &encumber.metadata_signature_ephemeral_pubkey,
+            &encumber.output_commitment,
+            &Covenant::default(),
+            &encumber.encrypted_data,
+            MicroMinotari::zero(),
+        );
+
+        let metadata_signature = match key_manager_service
+            .sign_with_nonce_and_challenge(
+                &member_info.sender_offset_key,
+                &member_info.sender_offset_nonce_key,
+                &challenge,
+            )
+            .await
+            {
+                Ok(signature) => signature,
+                Err(e) => {
+                    eprintln!("\nError: Metadata signature SignMessage error! {}\n", e);
+
+                    break;
+                },
+            };
+
+        if script_signature.get_signature() == Signature::default().get_signature() ||
+                metadata_signature.get_signature() == Signature::default().get_signature()
+            {
+                eprintln!(
+                    "\nError: Script and/or metadata signatures not created (index {})!\n",
+                    output_index,
+                );
+                break;
+            }
+
+            output_signatures.push(MemberMultisigSignature {
+                output_index,
+                script_signature,
+                metadata_signature,
+                script_offset,
+            });
+    }
+
+    return Ok(output_signatures);
+
+}
+
+pub async fn send_multisig_utxo_by_leader(
+    transaction_service: TransactionServiceHandle,
+    key_manager_service: TransactionKeyManagerWrapper<TransactionKeyManagerSqliteDatabase<WalletDbConnection>>,
+    session_id: &str) -> Result<(), CommandError> {
+    let session_id_clone = session_id.to_string();
+    let multisig_config = read_multisig_output(&session_id_clone).await?;
+    let encumber_config = load_multisig_utxo_encumber(session_id).await?;
+
+    let mut transaction_service = transaction_service.clone();
+    let spend_key = key_manager_service.get_spend_key().await?;
+    let public_key: tari_crypto::compressed_key::CompressedKey<tari_crypto::ristretto::RistrettoPublicKey> = spend_key.pub_key.clone();
+
+    let mut signatures_map: HashMap<CompressedKey<RistrettoPublicKey>, Vec<MemberMultisigSignature>> = HashMap::new();
+
+    let members_public_keys: Vec<CompressedKey<RistrettoPublicKey>> = multisig_config
+        .parties_public_keys
+        .iter()
+        .map(|k| k.as_compressed().clone())
+        .filter(|k| k != &public_key)
+        .collect();
+
+     let commitment_mask_key_id = key_manager_service.import_key(multisig_config.commitment_mask.clone().into()).await?;
+     
+    for pubkey in &members_public_keys {
+        let member_signatures = match load_multisig_member_signatures(
+            session_id,
+            pubkey.clone(),
+        ).await {
+            Ok(sigs) => sigs,
+            Err(e) => {
+                println!("Warning: Could not load multisig member signatures for {:?}: {}. Skipping.", pubkey, e);
+                continue;
+            }
+        };
+
+        let ephemeral_pubkey = match key_manager_service
+            .stealth_address_script_spending_key(&commitment_mask_key_id, pubkey)
+            .await {
+                Ok(pk) => pk,
+                Err(e) => {
+                    println!("Warning: Could not get ephemeral pubkey for {:?}: {}. Skipping.", pubkey, e);
+                    continue;
+                }
+            };
+
+        signatures_map.insert(
+            ephemeral_pubkey.clone(),
+            member_signatures,
+        );
+    }
+
+    // Create finalized spend transactions
+    let mut inputs = Vec::new();
+    let mut outputs = Vec::new();
+    let mut kernels = Vec::new();
+    let mut kernel_offset = PrivateKey::default();
+
+    for (_i, pub_key) in members_public_keys.iter().enumerate() {
+        let tx_id: tari_common_types::transaction::TxId = encumber_config[0].tx_id.clone();
+        let ephemeral_pubkey = match key_manager_service
+            .stealth_address_script_spending_key(&commitment_mask_key_id, pub_key)
+            .await {
+                Ok(pk) => pk,
+                Err(e) => {
+                    println!("Warning: Could not get ephemeral pubkey for {:?}: {}. Skipping.", pub_key, e);
+                    continue;
+                }
+            };
+
+        let signatures = match signatures_map.get(&ephemeral_pubkey) {
+            Some(sigs) => sigs.clone(),
+            None => {
+                println!("Warning: No signatures found for ephemeral pubkey {:?}. Skipping.", ephemeral_pubkey);
+                continue;
+            }
+        };
+        let mut metadata_signatures = Vec::with_capacity(signatures.len());
+        let mut script_signatures = Vec::with_capacity(signatures.len());
+        let mut offset = PrivateKey::default();
+
+        for party_info in signatures {
+            metadata_signatures.push(party_info.metadata_signature.clone());
+            script_signatures.push(party_info.script_signature.clone());
+            offset = &offset + &party_info.script_offset;
+        }
+
+        if let Err(e) = finalize_aggregate_utxo(
+            transaction_service.clone(),
+            tx_id.as_u64(),
+            metadata_signatures,
+            script_signatures,
+            offset,
+        )
+        .await
+        {
+            eprintln!(
+                "\nError: Error completing transaction '{}'! ({})\n",
+                tx_id, e
+            );
+            break;
+        }
+    }
+
+    Ok(())
 }

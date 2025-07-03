@@ -647,14 +647,11 @@ mod test {
                 CliCommands::PreMineSpendBackupUtxo(_) => {},
                 CliCommands::Sync(_) => {},
                 CliCommands::ExportViewKeyAndSpendKey(_) => {},
-                CliCommands::FinalizeMultisigUtxoStart(_) => {},
-                CliCommands::FinalizeMultisigUtxoStartParty(_) => {},
-                CliCommands::FinalizeMultisigUtxoEncumber(_) => {},
-                CliCommands::FinalizeMultisigUtxoSigs(_) => {},
-                CliCommands::FinalizeMultisigUtxoSpendTx(_) => {},
+
+                CliCommands::SendMultisigUtxoLeader(_) => {},
                 CliCommands::CreateMultisigUtxoTransferLeader(_) => {},
                 CliCommands::CreateMultisigUtxo(_) => { },
-                CliCommands::SignUtxoMember(_) => {},
+                CliCommands::SignMultisigUtxoMember(_) => {},
                 CliCommands::CollectMultisigUtxoEncumber(_) => {},
                 CliCommands::CreateMultisigUtxoTransferMember(_) => {},
             }

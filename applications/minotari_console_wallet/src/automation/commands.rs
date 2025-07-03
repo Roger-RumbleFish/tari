@@ -120,7 +120,7 @@ use tokio::{
 use super::error::CommandError;
 use crate::{
     automation::{
-        multisig::{encumber::collect_multisig_utxo_encumber, io::{read_multisig_output, save_multisig_output, save_multisig_party_output, save_multisig_utxo_encumber}, party::{create_multisig_party_member_output, sign_multisig_utxo_by_member}, script::{get_utxo_by_commitment_hash, is_multisig_utxo}, session::{create_multisig_output, make_utxo_multisig}}, utils::{
+        multisig::{encumber::collect_multisig_utxo_encumber, io::{read_multisig_output, save_multisig_member_signatures, save_multisig_output, save_multisig_party_output, save_multisig_utxo_encumber}, party::{create_multisig_party_member_output, send_multisig_utxo_by_leader, sign_multisig_utxo_by_member}, script::{get_utxo_by_commitment_hash, is_multisig_utxo}, session::{create_multisig_output, make_utxo_multisig}}, utils::{
             create_pre_mine_output_dir,
             get_file_name,
             move_session_file_to_session_dir,
@@ -2130,7 +2130,7 @@ pub async fn command_runner(
                                 },
                                 utxo.0.features,
                                 utxo.1.to_hex(),
-                                is_multisig_utxo(&utxo.0.script),
+                                is_multisig_utxo(&utxo.0.script)
                             );
                         }
                     }
@@ -2697,10 +2697,16 @@ pub async fn command_runner(
                 fs::remove_dir_all(temp_path)?;
             },
 
-            SignUtxoMember(args) => {
-                let own_address: TariAddress = wallet.get_wallet_one_sided_address().await?;
-                sign_multisig_utxo_by_member(args.session_id.clone(), own_address).await?;
-                println!("Signing multisig UTXO party member output");
+            SendMultisigUtxoLeader(args) => {
+                send_multisig_utxo_by_leader(wallet.transaction_service.clone(),wallet.key_manager_service.clone(),&args.session_id).await?;
+                break;
+            },
+
+            SignMultisigUtxoMember(args) => {
+                let own_address: TariAddress = wallet.get_wallet_interactive_address().await?;
+                let signatures = sign_multisig_utxo_by_member(wallet.key_manager_service.clone(), args.session_id.clone()).await?;
+                save_multisig_member_signatures(&args.session_id, signatures, own_address.clone()).await?;
+                break;
             },
 
             CollectMultisigUtxoEncumber(args) => {
@@ -2708,6 +2714,7 @@ pub async fn command_runner(
                 .build().map_err(|e| CommandError::General(e.to_string()))?;
                 
                 let output_service = wallet.output_manager_service.clone();
+                let transaction_service =  wallet.transaction_service.clone();
 
                 let client = wallet
                     .wallet_connectivity
@@ -2727,39 +2734,31 @@ pub async fn command_runner(
                 .ok_or(CommandError::General("Could not get tip height".to_string()))?;
 
 
-                let own_address: TariAddress = wallet.get_wallet_one_sided_address().await?;
+                let own_address: TariAddress = wallet.get_wallet_interactive_address().await?;
 
                 let outputs = collect_multisig_utxo_encumber(
                     output_service,
+                    transaction_service,
                     wallet.key_manager_service.clone(),
                     &consensus_manager.consensus_constants(height),
-                    args.session_id,
+                    args.session_id.clone(),
                     own_address
                 ).await?;
 
+                save_multisig_utxo_encumber(&args.session_id.clone(), outputs).await?;
+                break;
+            },
 
-                save_multisig_utxo_encumber(outputs).await?;
-                println!("Collecting multisig UTXO encumber");
+            CreateMultisigUtxoTransferMember(_args) => {
+                let key_manager_service = wallet.key_manager_service.clone();
+                let output = create_multisig_party_member_output(key_manager_service, _args.session_id.clone()).await?;
+                save_multisig_party_output(output).await?;
             },
 
             CreateMultisigUtxoTransferLeader(args) => {
                 let mut output_service = wallet.output_manager_service.clone();
                 let output = create_multisig_output(&mut output_service, args).await?;
                 save_multisig_output(output.clone()).await?;
-
-                let session_id = output.session_id;
-
-                let new_output = read_multisig_output(session_id).await?;
-
-                println!("Multisig UTXO created: {:?}", new_output);
-            },
-            
-            CreateMultisigUtxoTransferMember(_args) => {
-               let key_manager_service = wallet.key_manager_service.clone();
-                let output = create_multisig_party_member_output(key_manager_service, _args.session_id.clone()).await?;
-
-                save_multisig_party_output(output).await?;
-                println!("Creating multisig UTXO party member output");
             },
 
             CreateMultisigUtxo(args) => {
@@ -2801,22 +2800,6 @@ pub async fn command_runner(
                         eprintln!("Error creating multisig UTXO: {}", e);
                     }
                 }
-            },
-      
-            FinalizeMultisigUtxoEncumber(_args) => {
-                print!("Finalizing multisig UTXO encumber");
-            },
-            FinalizeMultisigUtxoSigs(_args) => {
-                print!("Finalizing multisig UTXO signatures");
-            },
-            FinalizeMultisigUtxoSpendTx(_args) => {
-                print!("Finalizing multisig UTXO spend transaction");
-            }
-            FinalizeMultisigUtxoStart(_args) => {
-                print!("Finalizing multisig UTXO start");
-            }
-            FinalizeMultisigUtxoStartParty(_args) => {
-                print!("Finalizing multisig UTXO start party");
             },
         }
     }

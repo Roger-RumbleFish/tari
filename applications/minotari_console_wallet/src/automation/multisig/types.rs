@@ -1,11 +1,9 @@
 use minotari_app_utilities::utilities::UniPublicKey;
 use serde::{Deserialize, Serialize};
-use tari_common_types::{tari_address::TariAddress, transaction::TxId, types::{CompressedCommitment, CompressedPublicKey}};
+use tari_common_types::{tari_address::TariAddress, transaction::TxId, types::{CompressedCommitment, CompressedPublicKey, PrivateKey, Signature}};
 use tari_core::transactions::{tari_amount::MicroMinotari, transaction_components::{EncryptedData, OutputFeatures}, transaction_key_manager::TariKeyId};
-use tari_crypto::{compressed_key::CompressedKey, ristretto::RistrettoPublicKey};
+use tari_crypto::{compressed_key::CompressedKey, ristretto::{RistrettoPublicKey, RistrettoSecretKey}};
 use tari_script::{CompressedCheckSigSchnorrSignature, ExecutionStack, TariScript};
-
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultisigOutput {
@@ -19,6 +17,7 @@ pub struct MultisigOutput {
     pub fee_per_gram: MicroMinotari,
     pub value: MicroMinotari,
     pub recipient_address: TariAddress,
+    pub commitment_mask: RistrettoSecretKey,
 }
 
 
@@ -28,7 +27,6 @@ pub struct AggregatedSignature {
     pub aggregated_nonce: TariKeyId,
     pub public_keys: Vec<CompressedKey<RistrettoPublicKey>>,
 }
-
 
 pub struct MultisigPartyOutput {
     pub leader: MultisigLeaderPartyOutput,
@@ -52,12 +50,12 @@ pub struct MultisigMemberPartyOutput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LeaderCommitmentSignature {
     pub signature: CompressedCheckSigSchnorrSignature,
-    pub shared_secret_public_key: CompressedPublicKey,
+    pub ephemeral_pubkey: CompressedPublicKey,
+    pub dh_shared_secret_public_key: CompressedPublicKey,
     pub script_nonce_key: CompressedPublicKey,
     pub sender_offset_public_key: CompressedPublicKey,
     pub sender_offset_public_nonce_key: CompressedPublicKey,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultisigEncumberOutput {
@@ -78,13 +76,20 @@ pub struct MultisigEncumberOutput {
 }
 
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemberCommitmentSignature {
     pub signature: CompressedCheckSigSchnorrSignature,
     pub script_nonce_key_id: TariKeyId,
-    pub secret_key: TariKeyId,
+    pub ephemeral_pubkey_id: TariKeyId,
     pub sender_offset_key: TariKeyId,
     pub sender_offset_nonce_key: TariKeyId,
 }
 
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MemberMultisigSignature {
+   pub output_index: usize,
+   pub script_signature: Signature,
+   pub metadata_signature: Signature,
+   pub script_offset: PrivateKey,
+}

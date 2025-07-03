@@ -1,8 +1,6 @@
-use minotari_wallet::{output_manager_service::{error::OutputManagerError, handle::OutputManagerHandle, storage::models::DbWalletOutput}, storage::sqlite_utilities::WalletDbConnection};
-use sha2::Sha256;
-use digest::Digest;
-use tari_common_types::{key_branches::TransactionKeyManagerBranch, transaction::TxId, types::{CompressedPublicKey, UncompressedPublicKey}};
-use tari_core::{one_sided::public_key_to_output_encryption_key, transactions::transaction_key_manager::{storage::sqlite_db::TransactionKeyManagerSqliteDatabase, TariKeyAndId, TariKeyId, TransactionKeyManagerInterface, TransactionKeyManagerWrapper}};
+use minotari_wallet::{output_manager_service::{error::OutputManagerError, handle::OutputManagerHandle, storage::models::DbWalletOutput}, transaction_service::handle::TransactionServiceHandle};
+use tari_common_types::{transaction::TxId, types::{CompressedPublicKey, PrivateKey, Signature, UncompressedPublicKey, UncompressedSignature}};
+use tari_core::{one_sided::public_key_to_output_encryption_key, transactions::transaction_key_manager::{TariKeyId, TransactionKeyManagerInterface}};
 use tari_crypto::{compressed_key::CompressedKey, ristretto::{RistrettoPublicKey, RistrettoSecretKey}};
 use tari_script::{Opcode, TariScript};
 use tari_utilities::hex::Hex;
@@ -15,7 +13,6 @@ pub fn is_multisig_utxo(tari_script: &TariScript) -> bool {
 
 pub fn get_multi_sig_script_components(
     script: &TariScript,
-    tx_id: TxId,
 ) -> Result<(Vec<CompressedPublicKey>, u8), OutputManagerError> {
     for op in script.as_slice() {
         if let Opcode::CheckMultiSigVerifyAggregatePubKey(m, _n, keys, _msg) = op {
@@ -23,34 +20,10 @@ pub fn get_multi_sig_script_components(
         }
     }
     Err(OutputManagerError::ServiceError(format!(
-        "Invalid script (TxId: {})",
-        tx_id
+        "Invalid script"
     )))
 }
 
-pub async fn get_multisig_script_key(
-    key_manager: TransactionKeyManagerWrapper<TransactionKeyManagerSqliteDatabase<WalletDbConnection>>,
-    session_id: &str,
-) -> Result<TariKeyAndId, CommandError> {
-    let mut hasher = Sha256::new();
-    hasher.update(session_id.as_bytes());
-    let hash = hasher.finalize();
-    let index = u64::from_le_bytes(hash[..8].try_into().unwrap());
-    let script_key_id = TariKeyId::Managed {
-        branch: TransactionKeyManagerBranch::SenderOffset.get_branch_key(),
-        index,
-    };
-
-    let pub_key = key_manager
-        .get_public_key_at_key_id(&script_key_id)
-        .await
-        .map_err(|e| CommandError::General(format!("Failed to get public key: {}", e)))?;
-
-    Ok(TariKeyAndId {
-        pub_key,
-        key_id: script_key_id,
-    })
-}
 
 pub fn sum_public_keys(public_keys: &[CompressedKey<RistrettoPublicKey>]) -> Result<RistrettoPublicKey, CommandError> {
     let mut sum = UncompressedPublicKey::default();
@@ -75,7 +48,6 @@ pub fn get_utxo_by_commitment_hash(
 ) -> Option<&DbWalletOutput> {
     utxos.iter().find(|utxo| utxo.commitment.to_hex() == commitment_hash)
 }
-
 
 #[allow(dead_code)]
 pub async fn select_utxos_for_amount(
@@ -120,4 +92,35 @@ pub async fn derive_multisig_recovery_key_id<KM: TransactionKeyManagerInterface>
     let encryption_key_id = key_manager.import_key(encryption_key).await?;
 
     Ok(encryption_key_id) 
+}
+
+/// finalizes an already encumbered a n-of-m transaction
+pub async fn finalize_aggregate_utxo(
+    transaction_service: TransactionServiceHandle,
+    tx_id: u64,
+    meta_signatures: Vec<Signature>,
+    script_signatures: Vec<Signature>,
+    wallet_script_secret_key: PrivateKey,
+) -> Result<TxId, CommandError> {
+
+    let mut transaction_service = transaction_service.clone();
+
+    let mut meta_sig = UncompressedSignature::default();
+    for sig in &meta_signatures {
+        meta_sig = &meta_sig + sig.to_schnorr_signature()?;
+    }
+    let mut script_sig = UncompressedSignature::default();
+    for sig in &script_signatures {
+        script_sig = &script_sig + sig.to_schnorr_signature()?;
+    }
+
+    transaction_service
+        .finalize_aggregate_utxo(
+            tx_id,
+            Signature::new_from_schnorr(meta_sig),
+            Signature::new_from_schnorr(script_sig),
+            wallet_script_secret_key,
+        )
+        .await
+        .map_err(CommandError::TransactionServiceError)
 }

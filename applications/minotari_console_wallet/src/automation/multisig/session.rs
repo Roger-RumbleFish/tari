@@ -1,7 +1,8 @@
 use chrono::Utc;
 use minotari_wallet::{output_manager_service::{handle::OutputManagerHandle, storage::models::DbWalletOutput, UtxoSelectionCriteria}, storage::sqlite_utilities::WalletDbConnection, transaction_service::handle::TransactionServiceHandle};
-use tari_common_types::{key_branches::TransactionKeyManagerBranch, transaction::TxId};
-use tari_core::transactions::{tari_amount::MicroMinotari, transaction_components::{encrypted_data::PaymentId, WalletOutputBuilder}, transaction_key_manager::{storage::sqlite_db::TransactionKeyManagerSqliteDatabase, TransactionKeyManagerInterface, TransactionKeyManagerWrapper}};
+
+use tari_common_types::{transaction::TxId};
+use tari_core::transactions::{tari_amount::MicroMinotari, transaction_components::{encrypted_data::PaymentId, EncryptedData, WalletOutputBuilder}, transaction_key_manager::{storage::sqlite_db::TransactionKeyManagerSqliteDatabase, TransactionKeyManagerInterface, TransactionKeyManagerWrapper}};
 use tari_crypto::{compressed_key::CompressedKey, ristretto::RistrettoPublicKey};
 use tari_script::{Opcode, TariScript};
 use tari_utilities::hex::Hex;
@@ -14,7 +15,7 @@ use tari_core::transactions::{
 };
 use tari_script::{ExecutionStack};
 use tari_utilities::ByteArray;
-use crate::automation::{error::CommandError, multisig::{script::derive_multisig_recovery_key_id}};
+use crate::automation::{error::CommandError, multisig::script::{derive_multisig_recovery_key_id, get_multi_sig_script_components, sum_public_keys_to_encryption_key}};
 use crate::{automation::{multisig::{script::{get_utxo_by_commitment_hash}, types::MultisigOutput}}, cli::CreateMultisigUtxoTransferLeaderArgs};
 
 pub async fn make_utxo_multisig(
@@ -26,26 +27,38 @@ pub async fn make_utxo_multisig(
     n: u8,
     public_keys: Vec<CompressedKey<RistrettoPublicKey>>,
 ) -> Result<TxId, CommandError> {
-        let commitment_bytes: [u8; 32] = utxo.commitment.as_bytes().try_into()
-            .map_err(|_| CommandError::General("Commitment is not 32 bytes".to_string()))?;
+        let utxo_value = MicroMinotari::from(utxo.wallet_output.value);
+
+        let (commitment_mask, script_key) = key_manager_service
+        .get_next_commitment_mask_and_script_key()
+        .await?;
+
+        let commitment = key_manager_service
+        .get_commitment(&commitment_mask.key_id, &utxo_value.into())
+        .await?;
+
+        let mut commitment_bytes = [0u8; 32];
+        commitment_bytes.clone_from_slice(commitment.as_bytes());
+
         let message: Box<[u8; 32]> = Box::new(commitment_bytes);
+
+        let mut ephemeral_pubkeys = Vec::new();
+        for pk in &public_keys {
+            // Derive a unique ephemeral key for this output and participant
+            let ephemeral_pubkey = key_manager_service
+                .stealth_address_script_spending_key(&commitment_mask.key_id, pk)
+                .await?;
+            ephemeral_pubkeys.push(ephemeral_pubkey);
+        }
     
         let script = TariScript::new(vec![
-            Opcode::CheckMultiSigVerifyAggregatePubKey(m, n, public_keys.clone(), message),
+            Opcode::CheckMultiSigVerifyAggregatePubKey(m, n, ephemeral_pubkeys.clone(), message),
         ])?;
 
-        let script_key = key_manager_service
-            .get_next_key(TransactionKeyManagerBranch::SenderOffset.get_branch_key())
-            .await
-            .unwrap();
-
-
-        let utxo_value = MicroMinotari::from(utxo.wallet_output.value);
-        let commitment_mask = key_manager_service.get_next_key(TransactionKeyManagerBranch::CommitmentMask.get_branch_key()).await.unwrap();
         let input_selection = UtxoSelectionCriteria::default();
         let payment_id = PaymentId::default();
         let custom_recover_key = derive_multisig_recovery_key_id(
-            &public_keys.clone(),
+            &ephemeral_pubkeys.clone(),
             &key_manager_service,
         ).await?;
 
@@ -62,11 +75,11 @@ pub async fn make_utxo_multisig(
             ).await
             .unwrap();
 
-        let (tx_id, transaction) = output_service.create_send_to_self_with_output(vec![output_builder], MicroMinotari::from(1), input_selection, payment_id.clone())
+        let fee_per_gram = MicroMinotari::from(1);
+
+        let (tx_id, transaction) = output_service.create_send_to_self_with_output(vec![output_builder], fee_per_gram, input_selection, payment_id.clone())
         .await
         .map_err(|e| CommandError::General(format!("Failed to send to self: {}", e)))?;
-
-        println!("Transaction created with ID: {}", tx_id);
 
         transaction_service
             .submit_transaction(tx_id, transaction, utxo_value, payment_id.clone())
@@ -76,8 +89,8 @@ pub async fn make_utxo_multisig(
          Ok(tx_id)
 }
 
-
-pub async fn create_multisig_output(output_service: &mut OutputManagerHandle, args: CreateMultisigUtxoTransferLeaderArgs) -> Result<MultisigOutput, CommandError> {
+pub async fn create_multisig_output(output_service: &mut OutputManagerHandle,
+    args: CreateMultisigUtxoTransferLeaderArgs) -> Result<MultisigOutput, CommandError> {
     let date_time = Utc::now();
     let session_id = format!("{}", date_time.format("%Y%m%d%H%M%S"));
 
@@ -92,24 +105,34 @@ pub async fn create_multisig_output(output_service: &mut OutputManagerHandle, ar
     let utxo_hashes = vec![selected_utxo.hash.to_hex()];
     let utxo_commitments = vec![selected_utxo.commitment.to_hex()];
 
-    // Bring back later on when resolve multiple utxos
-    // let utxo_hashes = utxos.iter().map(|utxo| utxo.hash.to_hex()).collect::<Vec<_>>();
+    let utxo_output = selected_utxo.wallet_output.clone();
 
-    // let utxo_commitments = utxos.iter()
-    //     .map(|utxo| utxo.commitment.to_hex())
-    //     .collect::<Vec<_>>();
+    let (multi_sig_public_keys, _threshold) = get_multi_sig_script_components(&utxo_output.script)?;
 
-    let multisig_output = MultisigOutput {
-        session_id: session_id.clone(),
-        utxos: utxo_hashes,
-        commitments: utxo_commitments,
-        fee_per_gram: MicroMinotari::from(1),
-        minimum_signatures: args.m,
-        recipient_address: args.recipient_address.clone(),
-        parties_public_keys: args.public_keys,
-        value: selected_utxo.wallet_output.value,
-    };
+    let encryption_private_key = sum_public_keys_to_encryption_key(&multi_sig_public_keys)?;
 
+    match EncryptedData::decrypt_data(
+        &encryption_private_key,
+        &selected_utxo.commitment,
+        &utxo_output.encrypted_data,
+    ) {
+        Ok((_amount, commitment_mask, _payment_id)) => {
+            let multisig_output = MultisigOutput {
+                session_id: session_id.clone(),
+                utxos: utxo_hashes,
+                commitments: utxo_commitments,
+                fee_per_gram: MicroMinotari::from(1),
+                minimum_signatures: args.m,
+                recipient_address: args.recipient_address.clone(),
+                parties_public_keys: args.public_keys,
+                value: selected_utxo.wallet_output.value,
+                commitment_mask: commitment_mask,
+            };
+            Ok(multisig_output)
+        },
+        Err(_) => {
+            Err(CommandError::General("Failed to decrypt output secrets".into()))
+        }
+    }
 
-    Ok(multisig_output)
 }

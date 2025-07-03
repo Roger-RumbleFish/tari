@@ -177,13 +177,8 @@ pub enum CliCommands {
     ExportViewKeyAndSpendKey(ExportViewKeyAndSpendKeyArgs),
     ImportPaperWallet(ImportPaperWalletArgs),
 
-    FinalizeMultisigUtxoStart(FinalizeMultisigUtxoStartArgs),
-    FinalizeMultisigUtxoStartParty(FinalizeMultisigUtxoStartPartyArgs),
-    FinalizeMultisigUtxoEncumber(FinalizeMultisigUtxoEncumberArgs),
-    FinalizeMultisigUtxoSigs(FinalizeMultisigUtxoSigsArgs),
-    FinalizeMultisigUtxoSpendTx(FinalizeMultisigUtxoSpendTxArgs),
-
-    SignUtxoMember(SignUtxoMemberArgs),
+    SendMultisigUtxoLeader(SendMultisigUtxoLeaderArgs),
+    SignMultisigUtxoMember(SignMultisigUtxoMemberArgs),
     CollectMultisigUtxoEncumber(CollectMultisigUtxoEncumberArgs),
     CreateMultisigUtxoTransferMember(CreateMultisigUtxoTransferMemberArgs),
     CreateMultisigUtxoTransferLeader(CreateMultisigUtxoTransferLeaderArgs),
@@ -488,63 +483,10 @@ pub struct SyncArgs {
 }
 
 #[derive(Debug, Args, Clone)]
-pub struct FinalizeMultisigUtxoStartArgs {
-    #[clap(long, default_value = "1")]
-    pub fee_per_gram: MicroMinotari,
-    #[clap(long)]
-    pub recipient_info: Vec<CliRecipientInfo>,
-    #[clap(long, default_value = "true")]
-    pub use_utxo_list_input_file: bool,
-}
-
-#[derive(Debug, Args, Clone)]
-pub struct FinalizeMultisigUtxoStartPartyArgs {
-    #[clap(long)]
-    pub input_file: Option<String>,
-    #[clap(long)]
-    pub utxo_list_file_path: Option<PathBuf>,
-    #[clap(long, default_value = "")]
-    pub alias: String,
-}
-
-
-#[derive(Debug, Args, Clone)]
-pub struct FinalizeMultisigUtxoEncumberArgs {
-    #[clap(long, default_value = "")]
-    pub session_id: String,
-    #[clap(long)]
-    pub member: Vec<String>,
-    #[clap(long)]
-    pub utxo_list_file_path: Option<PathBuf>,
-    #[clap(short, long, default_value = "Spend pre-mine encumber aggregate UTXO")]
-    pub payment_id: String,
-}
-
-#[derive(Debug, Args, Clone)]
-pub struct FinalizeMultisigUtxoSigsArgs {
-    #[clap(long, default_value = "")]
-    pub session_id: String,
-    #[clap(long)]
-    pub utxo_list_file_path: Option<PathBuf>,
-}
-
-#[derive(Debug, Args, Clone)]
-pub struct FinalizeMultisigUtxoSpendTxArgs {
-    #[clap(long, default_value = "")]
-    pub session_id: String,
-    #[clap(long)]
-    pub member: Vec<String>,
-}
-
-
-
-
-#[derive(Debug, Args, Clone)]
 pub struct CollectMultisigUtxoEncumberArgs {
     #[clap(long)]
     pub(crate) session_id: String,
 }
-
 
 /// This step is run by each party member and generates indexed script inputs for the leader for all bridge UTXOs
 #[derive(Debug, Args, Clone)]
@@ -553,13 +495,17 @@ pub struct CreateMultisigUtxoTransferMemberArgs {
     pub(crate) session_id: String,
 }
 
-
 #[derive(Debug, Args, Clone)]
-pub struct SignUtxoMemberArgs {
+pub struct SignMultisigUtxoMemberArgs {
     #[clap(long)]
     pub(crate) session_id: String,
 }
 
+#[derive(Debug, Args, Clone)]
+pub struct SendMultisigUtxoLeaderArgs {
+    #[clap(long)]
+    pub(crate) session_id: String,
+}
 
 // /// This step is run by the leader and generates the bridge UTXOs
 #[derive(Debug, Args, Clone)]
