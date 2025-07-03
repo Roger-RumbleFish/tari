@@ -351,15 +351,19 @@ impl TransactionInput {
         let context = context.unwrap_or_default();
 
         match self.spent_output {
-            SpentOutput::OutputHash(_) => Err(TransactionError::CompactInputMissingData("script".to_string())),
+            SpentOutput::OutputHash(_) => {
+                Err(TransactionError::CompactInputMissingData("script".to_string()))
+            },
             SpentOutput::OutputData { ref script, .. } => {
                 match script.execute_with_context(&self.input_data, &context)? {
                     StackItem::PublicKey(pubkey) => Ok(pubkey),
-                    item => Err(TransactionError::ScriptExecutionError(format!(
-                        "The script executed successfully but it did not leave a public key on the stack. Remaining \
-                         stack item was {:?}",
-                        item
-                    ))),
+                    item => {
+                        return Err(TransactionError::ScriptExecutionError(format!(
+                            "The script executed successfully but it did not leave a public key on the stack. Remaining \
+                             stack item was {:?}",
+                            item
+                        )));
+                    }
                 }
             },
         }

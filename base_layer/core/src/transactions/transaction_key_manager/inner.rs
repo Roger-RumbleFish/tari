@@ -69,7 +69,7 @@ use tari_crypto::{
     range_proof::RangeProofService as RPService,
     ristretto::{
         bulletproofs_plus::{RistrettoExtendedMask, RistrettoExtendedWitness},
-        RistrettoComSig,
+        RistrettoComSig, RistrettoSecretKey,
     },
 };
 use tari_hashing::KeyManagerTransactionsHashDomain;
@@ -78,7 +78,7 @@ use tari_key_manager::{
     key_manager_service::{AddResult, KeyDigest},
 };
 use tari_script::{CheckSigSchnorrSignature, CompressedCheckSigSchnorrSignature, TariScript};
-use tari_utilities::ByteArray;
+use tari_utilities::{ByteArray};
 use tokio::sync::RwLock;
 
 use crate::transactions::transaction_key_manager::{
@@ -1700,5 +1700,21 @@ where TBackend: TransactionKeyManagerBackend + 'static
         let public_key = CompressedPublicKey::from_secret_key(&private_key);
         let public_key = spend_key.to_public_key()? + &public_key.to_public_key()?;
         Ok(CompressedPublicKey::new_from_pk(public_key))
+    }
+
+    pub async fn stealth_address_script_spending_key_id(
+        &self,
+        commitment_mask_key_id: &TariKeyId,
+        spend_key_id: &TariKeyId,
+    ) -> Result<RistrettoSecretKey, TransactionError> {
+        let mask_private_key = self.get_private_key(commitment_mask_key_id).await?;
+        let spend_private_key = self.get_private_key(spend_key_id).await?;
+        let hasher =
+            DomainSeparatedHasher::<Blake2b<U64>, KeyManagerTransactionsHashDomain>::new_with_label("script key");
+        let hasher = hasher.chain(mask_private_key.as_bytes()).finalize();
+        let script_private_key = PrivateKey::from_uniform_bytes(hasher.as_ref())
+            .map_err(|_| KeyManagerServiceError::UnknownError("Invalid commitment mask private key".to_string()))?;
+        let ephemeral_private_key = spend_private_key + script_private_key;
+        Ok(ephemeral_private_key)
     }
 }

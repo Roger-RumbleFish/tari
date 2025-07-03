@@ -7,6 +7,7 @@ services:
     volumes:
       - ./wallet1_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
+    command: ["--network", "esmeralda"]
     tty: true
     # networks:
     #   - tari_net
@@ -17,13 +18,7 @@ services:
     volumes:
       - ./wallet2_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
-    # command:
-    #   [
-    #     "-p",
-    #     "wallet.custom_base_node=7ccf4e90d473388024b5152d06c3833caa1695a065f1b7dab302e7aca249c760::/ip4/127.0.0.1/tcp/40295"
-    #     # "-p",
-    #     # "wallet.custom_base_node=e408a705b07dad9059c54a513cbc1c7c7e2be9f550e53b441ceec1bff2f38649::/ip4/172.18.0.2/tcp/18142",
-    #   ]
+    command: ["--network", "esmeralda"]
     tty: true
     # networks:
     #   - tari_net
@@ -34,6 +29,7 @@ services:
     volumes:
       - ./wallet3_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
+    command: ["--network", "esmeralda"]
     tty: true
     # networks:
     #   - tari_net

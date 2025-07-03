@@ -31,7 +31,7 @@ use tari_common_types::{
     types::{ComAndPubSignature, CompressedCommitment, CompressedPublicKey, PrivateKey, RangeProof, Signature},
 };
 use tari_comms::types::CommsDHKE;
-use tari_crypto::{hashing::DomainSeparatedHash, ristretto::RistrettoComSig};
+use tari_crypto::{hashing::DomainSeparatedHash, ristretto::{RistrettoComSig, RistrettoSecretKey}};
 use tari_key_manager::key_manager_service::AddResult;
 use tari_script::{CompressedCheckSigSchnorrSignature, TariScript};
 use tari_utilities::hex::Hex;
@@ -476,6 +476,13 @@ pub trait TransactionKeyManagerInterface: Clone + Send + Sync + 'static {
         commitment_mask_key_id: &TariKeyId,
         spend_key: &CompressedPublicKey,
     ) -> Result<CompressedPublicKey, TransactionError>;
+
+  async fn stealth_address_script_spending_key_id(
+        &self,
+        commitment_mask_key_id: &TariKeyId,
+        spend_key_id: &TariKeyId,
+    ) -> Result<RistrettoSecretKey, TransactionError>;
+
 }
 
 #[async_trait::async_trait]

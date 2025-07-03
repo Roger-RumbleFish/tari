@@ -257,6 +257,12 @@ impl WalletOutput {
             aggregated_script_public_key_shares.to_public_key()? + script_public_key_self.to_public_key()?,
         );
 
+        println!(
+            "Script public key inside script: {:?} {:?}",
+            aggregated_script_public_key_shares.to_public_key()?,
+            script_public_key_self.to_public_key()?
+        );
+
         let total_ephemeral_public_key = CompressedPublicKey::new_from_pk(
             aggregated_script_signature_public_nonces.to_public_key()? +
                 &ephemeral_public_key_self.pub_key.to_public_key()?,

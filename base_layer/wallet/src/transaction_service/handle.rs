@@ -61,14 +61,14 @@ use tower::Service;
 use crate::{
     output_manager_service::{service::UseOutput, UtxoSelectionCriteria},
     transaction_service::{
-        error::TransactionServiceError,
-        storage::models::{
+        error::{TransactionServiceError, TransactionStorageError},
+        storage::{models::{
             CompletedTransaction,
             InboundTransaction,
             OutboundTransaction,
             TxCancellationReason,
             WalletTransaction,
-        },
+        }},
     },
     OperationId,
 };
@@ -212,6 +212,7 @@ pub enum TransactionServiceRequest {
     GetPaymentByReference(FixedHash),
     /// Get all transactions with their PayRefs (for listing/filtering)
     GetTransactionByPaymentReference(FixedHash),
+    InsertCompletedTransaction(TxId, CompletedTransaction),
 }
 
 impl fmt::Display for TransactionServiceRequest {
@@ -407,6 +408,9 @@ impl fmt::Display for TransactionServiceRequest {
             Self::GetTransactionByPaymentReference(payref) => {
                 write!(f, "GetTransactionByPaymentReference({})", payref)
             },
+            Self::InsertCompletedTransaction(tx_id, transaction) => {
+                write!(f, "InsertCompletedTransaction({}, {:?})", tx_id, transaction)
+            }
         }
     }
 }
@@ -896,6 +900,7 @@ impl TransactionServiceHandle {
         total_script_data_signature: Signature,
         script_offset: PrivateKey,
     ) -> Result<TxId, TransactionServiceError> {
+        println!("before finalize_aggregate_utxo");
         match self
             .handle
             .call(TransactionServiceRequest::FinalizeSentAggregateTransaction {
@@ -1295,4 +1300,20 @@ impl TransactionServiceHandle {
             _ => Err(TransactionServiceError::UnexpectedApiResponse),
         }
     }
+
+    pub async fn insert_completed_transaction(
+        &mut self,
+      tx_id: TxId,
+        transaction: CompletedTransaction,
+    ) -> Result<TxId, TransactionStorageError> {
+        self
+            .handle
+            .call(TransactionServiceRequest::InsertCompletedTransaction(tx_id, transaction))
+            .await
+            .map_err(|e| TransactionStorageError::UnexpectedResult(e.to_string()))?
+            .map(|_| ())
+            .map_err(|e| TransactionStorageError::UnexpectedResult(e.to_string()))?;
+
+        Ok(tx_id)
+}
 }

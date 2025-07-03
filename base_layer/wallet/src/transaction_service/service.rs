@@ -98,6 +98,7 @@ use tari_script::{
 };
 use tari_service_framework::{reply_channel, reply_channel::Receiver};
 use tari_shutdown::ShutdownSignal;
+use tari_utilities::hex::Hex;
 use tokio::{
     sync::{mpsc, mpsc::Sender, oneshot, Mutex},
     task::JoinHandle,
@@ -1028,6 +1029,10 @@ where
                     ))?,
                 }
             },
+            TransactionServiceRequest::InsertCompletedTransaction(tx_id, transaction) => {
+                self.db.insert_completed_transaction(tx_id, transaction)?;
+                Ok(TransactionServiceResponse::TransactionImported(tx_id))
+            }
         };
 
         // If the individual handlers did not already send the API response then do it here.
@@ -1462,12 +1467,19 @@ where
             JoinHandle<Result<TxId, TransactionServiceProtocolError<TxId>>>,
         >,
     ) -> Result<TxId, TransactionServiceError> {
+        println!("before get tx");
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: start");
         let mut transaction = self.db.get_completed_transaction(tx_id)?;
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: completed_transaction");
+        println!("after get tx");
+        println!("finalized_aggregate_encumbed_tx: tx_id: {}", tx_id);
+        println!("transaction_script_offset_before: {:?} {:?} {:?} {:?}", &transaction.transaction.script_offset.reveal(), &script_offset.reveal(), UncompressedPublicKey::from_secret_key(&transaction.transaction.script_offset), UncompressedPublicKey::from_secret_key(&script_offset));
 
         // Add the aggregate signature components
         transaction.transaction.script_offset = &transaction.transaction.script_offset + &script_offset;
+
+        println!("transaction_script_offset_before after: {:?} {:?}", &transaction.transaction.script_offset.reveal(), UncompressedPublicKey::from_secret_key(&transaction.transaction.script_offset));
+
 
         transaction.transaction.body.update_metadata_signature(
             &(transaction.transaction.body.outputs()[0].commitment.clone()),
@@ -1478,6 +1490,11 @@ where
                     &total_meta_data_signature.to_schnorr_signature()?,
             ),
         )?;
+
+        println!(
+            "finalized_aggregate_encumbed_tx: updated metadata_signature: {:?}",
+            transaction.transaction.body.outputs()[0].metadata_signature
+        );
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: updated metadata_signature");
 
         transaction.transaction.body.update_script_signature(
@@ -1490,8 +1507,7 @@ where
             ),
         )?;
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: updated script_signature");
-
-        // Validate the aggregate signatures and script offset
+ 
         let factory = CommitmentFactory::default();
         let mut input_keys = UncompressedPublicKey::default();
         for input in transaction.transaction.body.inputs() {
@@ -1502,6 +1518,7 @@ where
                     .commitment()
                     .map_err(|e| TransactionServiceError::ServiceError(format!("TxId: {}, {}", tx_id, e)))?,
             );
+
             trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: input_data {:?}", input.input_data);
             input_keys = input_keys +
                 input
@@ -1509,6 +1526,7 @@ where
                     .map_err(|e| TransactionServiceError::ServiceError(format!("TxId: {}, {}", tx_id, e)))?
                     .to_public_key()?;
         }
+
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: validated inputs");
         let mut output_keys = UncompressedPublicKey::default();
         for output in transaction.transaction.body.outputs() {
@@ -1517,8 +1535,14 @@ where
                 .map_err(|e| TransactionServiceError::ServiceError(format!("TxId: {}, {}", tx_id, e)))?;
             output_keys = output_keys + output.sender_offset_public_key.clone().to_public_key()?;
         }
+
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: validated outputs");
-        let lhs = input_keys - output_keys;
+        let lhs = input_keys.clone() - output_keys.clone();
+        let expectation = UncompressedPublicKey::from_secret_key(&transaction.transaction.script_offset);
+        println!("input_keys = {:?}", input_keys.clone().to_hex());
+        println!("output_keys = {:?}", output_keys.clone().to_hex());
+        println!("lhs = {:?}" , lhs);
+        println!("expectation = {:?}", expectation);
         if lhs != UncompressedPublicKey::from_secret_key(&transaction.transaction.script_offset) {
             return Err(TransactionServiceError::ServiceError(format!(
                 "Invalid script offset (TxId: {})",
@@ -1527,12 +1551,18 @@ where
         }
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: validated script offstet");
 
+        println!("test");
+
         // Update the wallet database
         let _res = self
             .resources
             .output_manager_service
             .update_output_metadata_signature(transaction.transaction.body.outputs()[0].clone())
             .await;
+
+
+        println!("before update");
+
 
         self.db.update_completed_transaction(tx_id, transaction)?;
 
