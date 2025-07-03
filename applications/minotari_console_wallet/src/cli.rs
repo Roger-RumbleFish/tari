@@ -488,7 +488,6 @@ pub struct CollectMultisigUtxoEncumberArgs {
     pub(crate) session_id: String,
 }
 
-/// This step is run by each party member and generates indexed script inputs for the leader for all bridge UTXOs
 #[derive(Debug, Args, Clone)]
 pub struct CreateMultisigUtxoTransferMemberArgs {
     #[clap(long)]
@@ -507,7 +506,6 @@ pub struct SendMultisigUtxoLeaderArgs {
     pub(crate) session_id: String,
 }
 
-// /// This step is run by the leader and generates the bridge UTXOs
 #[derive(Debug, Args, Clone)]
 pub struct CreateMultisigUtxoTransferLeaderArgs {
     #[clap(long)]
@@ -515,7 +513,7 @@ pub struct CreateMultisigUtxoTransferLeaderArgs {
     pub utxo_commitment_hash: String,
 
     #[clap(long)]
-    // list of public keys of the parties involved in the multisig
+    // The recipient address of the multisig UTXO
     pub recipient_address: TariAddress,
 
     // How many parties are involved in the multisig
@@ -530,11 +528,10 @@ pub struct CreateMultisigUtxoTransferLeaderArgs {
     pub public_keys: Vec<UniPublicKey>,
 }
 
-/// This step is run by the leader and generates the bridge UTXOs
 #[derive(Debug, Args, Clone)]
 pub struct CreateMultisigUtxoArgs {
     #[clap(long)]
-    // list of public keys of the parties involved in the multisig
+    //  The commitment hash of the multisig UTXO
     pub utxo_commitment_hash: String,
 
     // How many signatures are required to spend the multisig UTXO
@@ -548,12 +545,4 @@ pub struct CreateMultisigUtxoArgs {
     #[clap(long, multiple = true)]
     // list of public keys of the parties involved in the multisig
     pub public_keys: Vec<UniPublicKey>,
-}
-
-#[derive(Debug, Args, Clone)]
-pub struct SendMultisigArgs {
-    pub amount: MicroMinotari,
-    pub destination: TariAddress,
-    #[clap(short, long, default_value = "<No message>")]
-    pub payment_id: String,
 }

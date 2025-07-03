@@ -2,7 +2,7 @@ use minotari_app_utilities::utilities::UniPublicKey;
 use serde::{Deserialize, Serialize};
 use tari_common_types::{tari_address::TariAddress, transaction::TxId, types::{CompressedCommitment, CompressedPublicKey, PrivateKey, Signature}};
 use tari_core::transactions::{tari_amount::MicroMinotari, transaction_components::{EncryptedData, OutputFeatures}, transaction_key_manager::TariKeyId};
-use tari_crypto::{compressed_key::CompressedKey, ristretto::{RistrettoPublicKey, RistrettoSecretKey}};
+use tari_crypto::{ristretto::{RistrettoSecretKey}};
 use tari_script::{CompressedCheckSigSchnorrSignature, ExecutionStack, TariScript};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,14 +18,6 @@ pub struct MultisigOutput {
     pub value: MicroMinotari,
     pub recipient_address: TariAddress,
     pub commitment_mask: RistrettoSecretKey,
-}
-
-
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct AggregatedSignature {
-    pub aggregated_signature: CompressedCheckSigSchnorrSignature,
-    pub aggregated_nonce: TariKeyId,
-    pub public_keys: Vec<CompressedKey<RistrettoPublicKey>>,
 }
 
 pub struct MultisigPartyOutput {
@@ -75,7 +67,6 @@ pub struct MultisigEncumberOutput {
     pub shared_secret: CompressedPublicKey,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemberCommitmentSignature {
     pub signature: CompressedCheckSigSchnorrSignature,
@@ -84,7 +75,6 @@ pub struct MemberCommitmentSignature {
     pub sender_offset_key: TariKeyId,
     pub sender_offset_nonce_key: TariKeyId,
 }
-
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemberMultisigSignature {

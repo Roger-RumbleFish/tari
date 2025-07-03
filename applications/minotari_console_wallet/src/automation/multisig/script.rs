@@ -20,7 +20,7 @@ pub fn get_multi_sig_script_components(
         }
     }
     Err(OutputManagerError::ServiceError(format!(
-        "Invalid script"
+        "UTXO does not contain a multisig script",
     )))
 }
 

@@ -23,7 +23,7 @@ pub async fn save_multisig_output(multisig_output: MultisigOutput) -> Result<(),
     Ok(())
 }
 
-pub async fn read_multisig_output(session_id: &str) -> Result<MultisigOutput, CommandError> {
+pub async fn load_multisig_output(session_id: &str) -> Result<MultisigOutput, CommandError> {
 
     let out_dir = std::path::Path::new("/wallet_data");
     if !out_dir.exists() {

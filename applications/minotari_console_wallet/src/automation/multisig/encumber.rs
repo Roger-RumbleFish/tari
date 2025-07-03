@@ -34,7 +34,7 @@ use tari_core::{one_sided::{shared_secret_to_output_encryption_key, shared_secre
     }
 }};
 use tari_utilities::ByteArray;
-use crate::automation::{error::CommandError, multisig::{io::{load_leader_party_output, read_multisig_output}, script::{get_multi_sig_script_components, get_utxo_by_commitment_hash, sum_public_keys, sum_public_keys_to_encryption_key}, types::{MultisigEncumberOutput, MultisigOutput}}};
+use crate::automation::{error::CommandError, multisig::{io::{load_leader_party_output, load_multisig_output}, script::{get_multi_sig_script_components, get_utxo_by_commitment_hash, sum_public_keys, sum_public_keys_to_encryption_key}, types::{MultisigEncumberOutput, MultisigOutput}}};
 
 pub async fn collect_multisig_utxo_encumber(
     output_service:  OutputManagerHandle,
@@ -44,7 +44,7 @@ pub async fn collect_multisig_utxo_encumber(
     session_id: String,
     own_address: TariAddress) -> Result<Vec<MultisigEncumberOutput>, CommandError> {
     // Read multisig session config
-    let config: MultisigOutput = read_multisig_output(&session_id).await.map_err(|e| {
+    let config: MultisigOutput = load_multisig_output(&session_id).await.map_err(|e| {
         eprintln!("Error reading multisig output for session {}: {}", session_id, e);
         CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
     })?;
@@ -58,15 +58,15 @@ pub async fn collect_multisig_utxo_encumber(
 
     for pubkey in &config.parties_public_keys {
         // skip own address
-        if own_address.public_spend_key() == pubkey.as_compressed() {
+        if own_address.public_spend_key() == &CompressedPublicKey::from(pubkey.clone()) {
             println!("Skipping own address: {}", own_address);
             continue;
         }
 
-        let member_output = match load_leader_party_output(&session_id, pubkey.as_compressed().clone()) {
+        let member_output = match load_leader_party_output(&session_id, CompressedPublicKey::from(pubkey.clone())) {
             Ok(output) => output,
             Err(e) => {
-                println!("Warning: Could not load leader party output for {}: {}. Skipping.", pubkey.as_compressed().to_public_key()?.to_hex(), e);
+                println!("Warning: Could not load leader party output for {}: {}. Skipping.", CompressedPublicKey::from(pubkey.clone()).to_public_key()?.to_hex(), e);
                 continue;
             }
         };

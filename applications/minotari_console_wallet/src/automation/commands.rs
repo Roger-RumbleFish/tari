@@ -120,7 +120,7 @@ use tokio::{
 use super::error::CommandError;
 use crate::{
     automation::{
-        multisig::{encumber::collect_multisig_utxo_encumber, io::{read_multisig_output, save_multisig_member_signatures, save_multisig_output, save_multisig_party_output, save_multisig_utxo_encumber}, party::{create_multisig_party_member_output, send_multisig_utxo_by_leader, sign_multisig_utxo_by_member}, script::{get_utxo_by_commitment_hash, is_multisig_utxo}, session::{create_multisig_output, make_utxo_multisig}}, utils::{
+        multisig::{encumber::collect_multisig_utxo_encumber, io::{save_multisig_member_signatures, save_multisig_output, save_multisig_party_output, save_multisig_utxo_encumber}, party::{create_multisig_party_member_output, send_multisig_utxo_by_leader, sign_multisig_utxo_by_member}, script::{get_utxo_by_commitment_hash, is_multisig_utxo}, session::{create_multisig_output, make_utxo_multisig}}, utils::{
             create_pre_mine_output_dir,
             get_file_name,
             move_session_file_to_session_dir,
@@ -2777,7 +2777,7 @@ pub async fn command_runner(
                  let utxo = get_utxo_by_commitment_hash(&utxos, args.utxo_commitment_hash)
                      .ok_or(CommandError::General("UTXO not found by commitment hash".to_string()))?;
 
-                 let public_keys = args.public_keys.iter().map(|pk| pk.as_compressed().clone()).collect::<Vec<_>>();
+                 let public_keys = args.public_keys.iter().map(|pk| CompressedPublicKey::from(pk.clone())).collect::<Vec<_>>();
 
 
                 let result = make_utxo_multisig(

@@ -15,17 +15,17 @@ use tari_core::{covenants::Covenant, one_sided::shared_secret_to_output_encrypti
         TransactionKeyManagerWrapper,
     }}};
 use tari_utilities::ByteArray;
-use crate::automation::{error::CommandError, multisig::{io::{load_member_party_output, load_multisig_member_signatures, load_multisig_utxo_encumber, read_multisig_output}, script::{finalize_aggregate_utxo}, types::{LeaderCommitmentSignature, MemberCommitmentSignature, MemberMultisigSignature, MultisigLeaderPartyOutput, MultisigMemberPartyOutput, MultisigPartyOutput}}};
+use crate::automation::{error::CommandError, multisig::{io::{load_member_party_output, load_multisig_member_signatures, load_multisig_utxo_encumber, load_multisig_output}, script::{finalize_aggregate_utxo}, types::{LeaderCommitmentSignature, MemberCommitmentSignature, MemberMultisigSignature, MultisigLeaderPartyOutput, MultisigMemberPartyOutput, MultisigPartyOutput}}};
 
 pub async fn create_multisig_party_member_output(key_manager_service: TransactionKeyManagerWrapper<TransactionKeyManagerSqliteDatabase<WalletDbConnection>>, session_id: String) -> Result<MultisigPartyOutput, CommandError> {
     let spend_key = key_manager_service.get_spend_key().await?;
     let public_key = spend_key.pub_key.clone();
 
-    let config = read_multisig_output(&session_id).await
+    let config = load_multisig_output(&session_id).await
         .map_err(|e| CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
     let member_public_key = config.parties_public_keys.iter()
-        .find(|key| key.as_compressed().eq(&public_key))
+        .find(|key| CompressedPublicKey::from((*key).clone()) == public_key)
         .ok_or(CommandError::PartyMemberNotFound)?;
 
     let recipient_public_view_key = config.recipient_address.public_view_key()
@@ -45,12 +45,12 @@ pub async fn create_multisig_party_member_output(key_manager_service: Transactio
 
         let spend_key = key_manager_service.get_spend_key().await?;
 
-        if spend_key.pub_key != *member_public_key.as_compressed() {
+        if spend_key.pub_key != CompressedPublicKey::from(member_public_key.clone()) {
             return Err(CommandError::InvalidArgument("Spend key does not match member public key".to_string()));
         }
 
         let ephemeral_pubkey = key_manager_service
-        .stealth_address_script_spending_key(&commitment_mask_key_id, member_public_key.as_compressed())
+        .stealth_address_script_spending_key(&commitment_mask_key_id, &CompressedPublicKey::from(member_public_key.clone()))
         .await?;
 
         let ephemeral_private_key = key_manager_service
@@ -100,12 +100,12 @@ pub async fn create_multisig_party_member_output(key_manager_service: Transactio
     let multisig_leader_party_output = MultisigLeaderPartyOutput {
         session_id: session_id.clone(),
         commitment_signatures: leader_commitment_signatures,
-        member_public_key: member_public_key.as_compressed().clone(),
+        member_public_key: CompressedPublicKey::from(member_public_key.clone()),
     };
 
     let multisig_member_party_output = MultisigMemberPartyOutput {
         session_id: session_id.clone(),
-        member_public_key: member_public_key.as_compressed().clone(),
+        member_public_key: CompressedPublicKey::from(member_public_key.clone()),
         commitment_signatures: member_commitment_signatures,
     };
 
@@ -116,14 +116,14 @@ pub async fn sign_multisig_utxo_by_member(
     key_manager_service: TransactionKeyManagerWrapper<TransactionKeyManagerSqliteDatabase<WalletDbConnection>>,
     session_id: String) -> Result<Vec<MemberMultisigSignature>, CommandError> {
     let session_id_clone = session_id.clone();
-    let multisig_config = read_multisig_output(&session_id_clone).await?;
+    let multisig_config = load_multisig_output(&session_id_clone).await?;
 
     let key = key_manager_service.get_spend_key()
         .await
         .map_err(|e| CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?.pub_key;
 
 
-    let config = read_multisig_output(&session_id_clone).await?;
+    let config = load_multisig_output(&session_id_clone).await?;
     let member_config = load_member_party_output(&session_id, key.clone())?;
     let encumber_config = load_multisig_utxo_encumber(&session_id).await?;
 
@@ -275,10 +275,8 @@ pub async fn send_multisig_utxo_by_leader(
     key_manager_service: TransactionKeyManagerWrapper<TransactionKeyManagerSqliteDatabase<WalletDbConnection>>,
     session_id: &str) -> Result<(), CommandError> {
     let session_id_clone = session_id.to_string();
-    let multisig_config = read_multisig_output(&session_id_clone).await?;
+    let multisig_config = load_multisig_output(&session_id_clone).await?;
     let encumber_config = load_multisig_utxo_encumber(session_id).await?;
-
-    let mut transaction_service = transaction_service.clone();
     let spend_key = key_manager_service.get_spend_key().await?;
     let public_key: tari_crypto::compressed_key::CompressedKey<tari_crypto::ristretto::RistrettoPublicKey> = spend_key.pub_key.clone();
 
@@ -287,7 +285,7 @@ pub async fn send_multisig_utxo_by_leader(
     let members_public_keys: Vec<CompressedKey<RistrettoPublicKey>> = multisig_config
         .parties_public_keys
         .iter()
-        .map(|k| k.as_compressed().clone())
+        .map(|k| CompressedPublicKey::from(k.clone()))
         .filter(|k| k != &public_key)
         .collect();
 
@@ -320,12 +318,6 @@ pub async fn send_multisig_utxo_by_leader(
             member_signatures,
         );
     }
-
-    // Create finalized spend transactions
-    let mut inputs = Vec::new();
-    let mut outputs = Vec::new();
-    let mut kernels = Vec::new();
-    let mut kernel_offset = PrivateKey::default();
 
     for (_i, pub_key) in members_public_keys.iter().enumerate() {
         let tx_id: tari_common_types::transaction::TxId = encumber_config[0].tx_id.clone();
