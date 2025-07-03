@@ -1482,7 +1482,6 @@ where
                     &total_meta_data_signature.to_schnorr_signature()?,
             ),
         )?;
-
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: updated metadata_signature");
 
         transaction.transaction.body.update_script_signature(
@@ -1495,7 +1494,8 @@ where
             ),
         )?;
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: updated script_signature");
- 
+
+        // Validate the aggregate signatures and script offset
         let factory = CommitmentFactory::default();
         let mut input_keys = UncompressedPublicKey::default();
         for input in transaction.transaction.body.inputs() {
@@ -1514,7 +1514,6 @@ where
                     .map_err(|e| TransactionServiceError::ServiceError(format!("TxId: {}, {}", tx_id, e)))?
                     .to_public_key()?;
         }
-
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: validated inputs");
         let mut output_keys = UncompressedPublicKey::default();
         for output in transaction.transaction.body.outputs() {
@@ -1526,7 +1525,6 @@ where
 
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: validated outputs");
         let lhs = input_keys.clone() - output_keys.clone();
-
         if lhs != UncompressedPublicKey::from_secret_key(&transaction.transaction.script_offset) {
             return Err(TransactionServiceError::ServiceError(format!(
                 "Invalid script offset (TxId: {})",

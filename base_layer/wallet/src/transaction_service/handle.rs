@@ -900,7 +900,6 @@ impl TransactionServiceHandle {
         total_script_data_signature: Signature,
         script_offset: PrivateKey,
     ) -> Result<TxId, TransactionServiceError> {
-        println!("before finalize_aggregate_utxo");
         match self
             .handle
             .call(TransactionServiceRequest::FinalizeSentAggregateTransaction {

@@ -124,7 +124,7 @@ mod test {
     use minotari_ledger_wallet_common::common_types::Branch;
 
     use crate::{
-     key_branches::{
+        key_branches::{
             TransactionKeyManagerBranch,
             COMMITMENT_MASK,
             DATA_ENCRYPTION,

@@ -3406,7 +3406,7 @@ where
                         .key_manager
                         .get_diffie_hellman_shared_secret(&view_key.key_id, &output.sender_offset_public_key)
                         .await?;
-     
+
                     let encryption_key = shared_secret_to_output_encryption_key(&shared_secret)?;
                     if let Ok((committed_value, commitment_mask_private_key, payment_id)) =
                         EncryptedData::decrypt_data(&encryption_key, &output.commitment, &output.encrypted_data)
