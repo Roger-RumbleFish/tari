@@ -1506,7 +1506,6 @@ where
                     .commitment()
                     .map_err(|e| TransactionServiceError::ServiceError(format!("TxId: {}, {}", tx_id, e)))?,
             );
-
             trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: input_data {:?}", input.input_data);
             input_keys = input_keys +
                 input
@@ -1522,9 +1521,8 @@ where
                 .map_err(|e| TransactionServiceError::ServiceError(format!("TxId: {}, {}", tx_id, e)))?;
             output_keys = output_keys + output.sender_offset_public_key.clone().to_public_key()?;
         }
-
         trace!(target: LOG_TARGET, "finalized_aggregate_encumbed_tx: validated outputs");
-        let lhs = input_keys.clone() - output_keys.clone();
+        let lhs = input_keys - output_keys;
         if lhs != UncompressedPublicKey::from_secret_key(&transaction.transaction.script_offset) {
             return Err(TransactionServiceError::ServiceError(format!(
                 "Invalid script offset (TxId: {})",
