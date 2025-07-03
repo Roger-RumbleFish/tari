@@ -517,6 +517,16 @@ pub struct SyncArgs {
 }
 
 #[derive(Debug, Args, Clone)]
+pub struct ShowPayRefArgs {
+    pub transaction_id: u64,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct FindPayRefArgs {
+    pub payment_reference_hex: String,
+}
+
+#[derive(Debug, Args, Clone)]
 pub struct CollectMultisigUtxoEncumberArgs {
     #[clap(long)]
     pub(crate) session_id: String,

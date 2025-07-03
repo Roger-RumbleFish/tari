@@ -3,7 +3,7 @@ use tari_common_types::{
     key_branches::TransactionKeyManagerBranch, tari_address::TariAddress, transaction::{TransactionDirection, TransactionStatus, TxId}, types::{CompressedPublicKey, FixedHash, HashOutput, UncompressedCommitment, UncompressedPublicKey}
 };
 
-use tari_core::{borsh::SerializedSize, consensus::ConsensusConstants, covenants::Covenant, transactions::{fee::Fee, transaction_components::{KernelFeatures, Transaction}, transaction_protocol::sender::TransactionSenderMessage, CryptoFactories, ReceiverTransactionProtocol, SenderTransactionProtocol}};
+use tari_core::{borsh::SerializedSize, consensus::ConsensusConstants, covenants::Covenant, transactions::{fee::Fee, transaction_components::{payment_id::PaymentId, KernelFeatures, Transaction}, transaction_protocol::sender::TransactionSenderMessage, CryptoFactories, ReceiverTransactionProtocol, SenderTransactionProtocol}};
 use tari_core::transactions::transaction_components::RangeProofType;
 
 use tari_common_types::{
@@ -26,7 +26,7 @@ use minotari_wallet::{
     storage::sqlite_utilities::WalletDbConnection, transaction_service::{handle::TransactionServiceHandle, storage::models::CompletedTransaction},
 };
 use tari_core::{one_sided::{shared_secret_to_output_encryption_key, shared_secret_to_output_spending_key}, transactions::{
-    tari_amount::{MicroMinotari}, transaction_components::{encrypted_data::PaymentId, EncryptedData, WalletOutput, WalletOutputBuilder}, transaction_key_manager::{
+    tari_amount::{MicroMinotari}, transaction_components::{EncryptedData, WalletOutput, WalletOutputBuilder}, transaction_key_manager::{
         storage::sqlite_db::TransactionKeyManagerSqliteDatabase,
         TariKeyId,
         TransactionKeyManagerInterface,
@@ -385,7 +385,7 @@ pub async fn encumber_aggregate_utxo(
         .await
         .map_err(|e| CommandError::General(format!("Failed to build single round message: {}", e)))?;
 
-    output_service.confirm_encumberance(tx_id)
+    output_service.confirm_encumberance(tx_id, Vec::new())
     .await?;
 
     // Prepare receiver part of the transaction

@@ -662,6 +662,10 @@ mod test {
                 CliCommands::Sync(_) => {},
                 CliCommands::ExportViewKeyAndSpendKey(_) => {},
 
+                CliCommands::ShowPayRef(_) => {},
+                CliCommands::FindPayRef(_) => {},
+                CliCommands::ListTx => {},
+
                 CliCommands::SendMultisigUtxoLeader(_) => {},
                 CliCommands::CreateMultisigUtxoTransferLeader(_) => {},
                 CliCommands::CreateMultisigUtxo(_) => { },

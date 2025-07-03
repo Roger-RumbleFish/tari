@@ -2,7 +2,7 @@ use chrono::Utc;
 use minotari_wallet::{output_manager_service::{handle::OutputManagerHandle, storage::models::DbWalletOutput, UtxoSelectionCriteria}, storage::sqlite_utilities::WalletDbConnection, transaction_service::handle::TransactionServiceHandle};
 
 use tari_common_types::{transaction::TxId};
-use tari_core::transactions::{tari_amount::MicroMinotari, transaction_components::{encrypted_data::PaymentId, EncryptedData, WalletOutputBuilder}, transaction_key_manager::{storage::sqlite_db::TransactionKeyManagerSqliteDatabase, TransactionKeyManagerInterface, TransactionKeyManagerWrapper}};
+use tari_core::transactions::{tari_amount::MicroMinotari, transaction_components::{payment_id::PaymentId, EncryptedData, WalletOutputBuilder}, transaction_key_manager::{storage::sqlite_db::TransactionKeyManagerSqliteDatabase, TransactionKeyManagerInterface, TransactionKeyManagerWrapper}};
 use tari_crypto::{compressed_key::CompressedKey, ristretto::RistrettoPublicKey};
 use tari_script::{Opcode, TariScript};
 use tari_utilities::hex::Hex;
