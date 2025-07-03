@@ -41,7 +41,7 @@ use tari_core::{
     transactions::{
         tari_amount::MicroMinotari,
         transaction_components::{
-            encrypted_data::PaymentId,
+            payment_id::PaymentId,
             BuildInfo,
             CodeTemplateRegistration,
             OutputFeatures,
@@ -62,7 +62,8 @@ use crate::{
     output_manager_service::{service::UseOutput, UtxoSelectionCriteria},
     transaction_service::{
         error::{TransactionServiceError, TransactionStorageError},
-        storage::{models::{
+        offline_signing::models::{PrepareOneSidedTransactionForSigningResult, SignedOneSidedTransactionResult},
+        storage::models::{
             CompletedTransaction,
             InboundTransaction,
             OutboundTransaction,
@@ -83,6 +84,7 @@ pub enum TransactionServiceRequest {
         payment_id: Option<Vec<u8>>,
         block_hash: Option<FixedHash>,
         block_height: Option<u64>,
+        max_limit: u64,
     },
     GetCompletedTransactionsByAddresses {
         source_address: Option<TariAddress>,
@@ -90,7 +92,7 @@ pub enum TransactionServiceRequest {
     },
     GetCancelledPendingInboundTransactions,
     GetCancelledPendingOutboundTransactions,
-    GetCancelledCompletedTransactions,
+    GetCancelledCompletedTransactions(u64),
     GetCompletedTransaction(TxId),
     GetAnyTransaction(TxId),
     ImportTransaction(WalletTransaction),
@@ -157,6 +159,20 @@ pub enum TransactionServiceRequest {
         binary_url: MaxSizeString<255>,
         fee_per_gram: MicroMinotari,
     },
+    PrepareOneSidedTransactionForSigning {
+        destination: TariAddress,
+        amount: MicroMinotari,
+        selection_criteria: UtxoSelectionCriteria,
+        output_features: Box<OutputFeatures>,
+        fee_per_gram: MicroMinotari,
+        payment_id: PaymentId,
+    },
+    SignOneSidedTransaction {
+        request: PrepareOneSidedTransactionForSigningResult,
+    },
+    BroadcastSignedOneSidedTransaction {
+        request: SignedOneSidedTransactionResult,
+    },
     SendOneSidedTransaction {
         destination: TariAddress,
         amount: MicroMinotari,
@@ -204,6 +220,7 @@ pub enum TransactionServiceRequest {
     SetNumConfirmationsRequired(u64),
     ValidateTransactions,
     ReValidateTransactions,
+    ReValidateRejectedTransactions,
     /// Returns the fee per gram estimates for the next {count} blocks.
     GetFeePerGramStatsPerBlock {
         count: usize,
@@ -226,7 +243,7 @@ impl fmt::Display for TransactionServiceRequest {
             Self::ImportTransaction(tx) => write!(f, "ImportTransaction: {:?}", tx),
             Self::GetCancelledPendingInboundTransactions => write!(f, "GetCancelledPendingInboundTransactions"),
             Self::GetCancelledPendingOutboundTransactions => write!(f, "GetCancelledPendingOutboundTransactions"),
-            Self::GetCancelledCompletedTransactions => write!(f, "GetCancelledCompletedTransactions"),
+            Self::GetCancelledCompletedTransactions(_) => write!(f, "GetCancelledCompletedTransactions"),
             Self::GetCompletedTransaction(t) => write!(f, "GetCompletedTransaction({})", t),
             Self::ScrapeWallet {
                 destination,
@@ -347,6 +364,20 @@ impl fmt::Display for TransactionServiceRequest {
                 payment_id,
                 ..
             } => write!(f, "Registering VN ({}, {})", validator_node_public_key, payment_id),
+            Self::PrepareOneSidedTransactionForSigning {
+                destination,
+                amount,
+                payment_id,
+                ..
+            } => write!(
+                f,
+                "PrepareOneSidedTransactionForSigning (to {}, {}, {})",
+                destination, amount, payment_id
+            ),
+            Self::SignOneSidedTransaction { request } => write!(f, "SignOneSidedTransaction (request {:?})", request,),
+            Self::BroadcastSignedOneSidedTransaction { request } => {
+                write!(f, "BroadcastSignedOneSidedTransaction (request {:?})", request,)
+            },
             Self::SendOneSidedTransaction {
                 destination,
                 amount,
@@ -396,6 +427,7 @@ impl fmt::Display for TransactionServiceRequest {
             Self::GetAnyTransaction(t) => write!(f, "GetAnyTransaction({})", t),
             Self::ValidateTransactions => write!(f, "ValidateTransactions"),
             Self::ReValidateTransactions => write!(f, "ReValidateTransactions"),
+            Self::ReValidateRejectedTransactions => write!(f, "ReValidateRejectedTransactions"),
             Self::GetFeePerGramStatsPerBlock { count } => {
                 write!(f, "GetFeePerGramEstimatesPerBlock(count: {})", count,)
             },
@@ -460,6 +492,8 @@ pub enum TransactionServiceResponse {
     TransactionPayRefs(Vec<FixedHash>),
     /// Response containing payment details for a PayRef
     PaymentDetails(Option<PaymentDetails>),
+    OneSidedTransactionPreparedForSigning(Box<PrepareOneSidedTransactionForSigningResult>),
+    SignedOneSidedTransaction(Box<SignedOneSidedTransactionResult>),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Default)]
@@ -743,6 +777,60 @@ impl TransactionServiceHandle {
         }
     }
 
+    pub async fn prepare_one_sided_transaction_for_signing(
+        &mut self,
+        destination: TariAddress,
+        amount: MicroMinotari,
+        selection_criteria: UtxoSelectionCriteria,
+        output_features: OutputFeatures,
+        fee_per_gram: MicroMinotari,
+        payment_id: PaymentId,
+    ) -> Result<PrepareOneSidedTransactionForSigningResult, TransactionServiceError> {
+        match self
+            .handle
+            .call(TransactionServiceRequest::PrepareOneSidedTransactionForSigning {
+                destination,
+                amount,
+                selection_criteria,
+                output_features: Box::new(output_features),
+                fee_per_gram,
+                payment_id,
+            })
+            .await??
+        {
+            TransactionServiceResponse::OneSidedTransactionPreparedForSigning(result) => Ok(*result),
+            _ => Err(TransactionServiceError::UnexpectedApiResponse),
+        }
+    }
+
+    pub async fn sign_one_sided_transaction(
+        &mut self,
+        request: PrepareOneSidedTransactionForSigningResult,
+    ) -> Result<SignedOneSidedTransactionResult, TransactionServiceError> {
+        match self
+            .handle
+            .call(TransactionServiceRequest::SignOneSidedTransaction { request })
+            .await??
+        {
+            TransactionServiceResponse::SignedOneSidedTransaction(result) => Ok(*result),
+            _ => Err(TransactionServiceError::UnexpectedApiResponse),
+        }
+    }
+
+    pub async fn broadcast_signed_one_sided_transaction(
+        &mut self,
+        request: SignedOneSidedTransactionResult,
+    ) -> Result<TxId, TransactionServiceError> {
+        match self
+            .handle
+            .call(TransactionServiceRequest::BroadcastSignedOneSidedTransaction { request })
+            .await??
+        {
+            TransactionServiceResponse::TransactionSent(tx_id) => Ok(tx_id),
+            _ => Err(TransactionServiceError::UnexpectedApiResponse),
+        }
+    }
+
     pub async fn send_one_sided_transaction(
         &mut self,
         destination: TariAddress,
@@ -1009,6 +1097,7 @@ impl TransactionServiceHandle {
         payment_id: Option<Vec<u8>>,
         block_hash: Option<FixedHash>,
         block_height: Option<u64>,
+        max_limit: u64,
     ) -> Result<Vec<CompletedTransaction>, TransactionServiceError> {
         match self
             .handle
@@ -1016,6 +1105,7 @@ impl TransactionServiceHandle {
                 payment_id,
                 block_hash,
                 block_height,
+                max_limit,
             })
             .await??
         {
@@ -1044,10 +1134,11 @@ impl TransactionServiceHandle {
 
     pub async fn get_cancelled_completed_transactions(
         &mut self,
+        max_limit: u64,
     ) -> Result<Vec<CompletedTransaction>, TransactionServiceError> {
         match self
             .handle
-            .call(TransactionServiceRequest::GetCancelledCompletedTransactions)
+            .call(TransactionServiceRequest::GetCancelledCompletedTransactions(max_limit))
             .await??
         {
             TransactionServiceResponse::CompletedTransactions(c) => Ok(c),
@@ -1155,6 +1246,17 @@ impl TransactionServiceHandle {
         match self
             .handle
             .call(TransactionServiceRequest::ReValidateTransactions)
+            .await??
+        {
+            TransactionServiceResponse::ValidationStarted(_) => Ok(()),
+            _ => Err(TransactionServiceError::UnexpectedApiResponse),
+        }
+    }
+
+    pub async fn revalidate_rejected_transactions(&mut self) -> Result<(), TransactionServiceError> {
+        match self
+            .handle
+            .call(TransactionServiceRequest::ReValidateRejectedTransactions)
             .await??
         {
             TransactionServiceResponse::ValidationStarted(_) => Ok(()),

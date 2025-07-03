@@ -23,6 +23,7 @@
 use std::{
     io,
     num::{ParseFloatError, ParseIntError},
+    path::PathBuf,
 };
 
 use log::*;
@@ -100,6 +101,12 @@ pub enum CommandError {
     ScriptError(#[from] ScriptError),
     #[error("Party member not found")]
     PartyMemberNotFound,
+    #[error("Failed to write to file {file_path} - {err}.")]
+    FileWriteError { file_path: PathBuf, err: io::Error },
+    #[error("Failed to read file {file_path} - {err}.")]
+    FileReadError { file_path: PathBuf, err: io::Error },
+    #[error("Serialization error: `{0}`")]
+    SerializationError(String),
 }
 
 impl From<SchnorrSignatureError> for CommandError {

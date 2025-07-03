@@ -13,6 +13,7 @@ wallet*_data
 *.userprefs
 .vscode/
 *.code-workspace
+.zed/
 tags
 null
 
