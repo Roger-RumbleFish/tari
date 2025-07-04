@@ -155,9 +155,10 @@ pub async fn sign_multisig_utxo_by_member(
             {
                 Ok(signature) => signature,
                 Err(e) => {
-                    eprintln!("\nError: Script signature SignMessage error! {}\n", e);
-
-                    break;
+                    return Err(CommandError::General(format!(
+                        "Script signature error for output {}: {}",
+                        output_index, e
+                    )));
                 },
         };
 

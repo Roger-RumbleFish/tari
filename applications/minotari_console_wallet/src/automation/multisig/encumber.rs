@@ -385,7 +385,7 @@ pub async fn encumber_aggregate_utxo(
         .await
         .map_err(|e| CommandError::General(format!("Failed to build single round message: {}", e)))?;
 
-    output_service.confirm_encumberance(tx_id, Vec::new())
+    output_service.confirm_encumbrance(tx_id, Vec::new())
     .await?;
 
     // Prepare receiver part of the transaction

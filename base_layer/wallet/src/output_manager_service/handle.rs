@@ -1021,7 +1021,7 @@ impl OutputManagerHandle {
             _ => Err(OutputManagerError::UnexpectedApiResponse),
         }
     }
-    pub async fn confirm_encumberance(&mut self, tx_id: TxId, change_outputs: Vec<WalletOutput>) -> Result<(), OutputManagerError> {
+    pub async fn confirm_encumbrance(&mut self, tx_id: TxId, change_outputs: Vec<WalletOutput>) -> Result<(), OutputManagerError> {
         self.handle
             .call(OutputManagerRequest::ConfirmEncumberance(tx_id, change_outputs))
             .await??;

@@ -409,7 +409,7 @@ where
                 .map(OutputManagerResponse::FeeEstimate),
             OutputManagerRequest::ConfirmPendingTransaction(tx_id, change) => {
                 let change_outputs = change.unwrap_or(Vec::new());
-                self.confirm_encumberance(tx_id, change_outputs)
+                self.confirm_encumbrance(tx_id, change_outputs)
                     .await
                     .map(|_| OutputManagerResponse::PendingTransactionConfirmed)
             },
@@ -546,7 +546,7 @@ where
                 Ok(OutputManagerResponse::FetchUnspentOutputs(outputs))
             }
             OutputManagerRequest::ConfirmEncumberance(tx_id, change_outputs ) => {
-                self.confirm_encumberance(tx_id, change_outputs).await?;
+                self.confirm_encumbrance(tx_id, change_outputs).await?;
                 Ok(OutputManagerResponse::ConfirmEncumberance)
             },
         }
@@ -1550,7 +1550,7 @@ where
         // but the returned value is not used
         let _single_round_sender_data = stp.build_single_round_message(&self.resources.key_manager).await?;
 
-        self.confirm_encumberance(tx_id, Vec::new()).await?;
+        self.confirm_encumbrance(tx_id, Vec::new()).await?;
 
         // Prepare receiver part of the transaction
 
@@ -1893,7 +1893,7 @@ where
         // but the returned value is not used
         let _single_round_sender_data = stp.build_single_round_message(&self.resources.key_manager).await?;
 
-        self.confirm_encumberance(tx_id, Vec::new()).await?;
+        self.confirm_encumbrance(tx_id, Vec::new()).await?;
 
         // Prepare receiver part of the transaction
 
@@ -2130,16 +2130,16 @@ where
         self.resources
             .db
             .encumber_outputs(tx_id, input_selection.into_selected(), outputs)?;
-        self.confirm_encumberance(tx_id, Vec::new()).await?;
+        self.confirm_encumbrance(tx_id, Vec::new()).await?;
         trace!(target: LOG_TARGET, "Finalize send-to-self transaction ({}).", tx_id);
         let tx = stp.into_transaction()?;
 
         Ok((fee, tx))
     }
 
-    /// Confirm that a transaction has finished being negotiated between parties so the short-term encumberance can be
+    /// Confirm that a transaction has finished being negotiated between parties so the short-term encumbrance can be
     /// made official
-    async fn confirm_encumberance(
+    async fn confirm_encumbrance(
         &mut self,
         tx_id: TxId,
         change_outputs: Vec<WalletOutput>,
@@ -2608,7 +2608,7 @@ where
         self.resources
             .db
             .encumber_outputs(tx_id, src_outputs.clone(), dest_outputs)?;
-        self.confirm_encumberance(tx_id, Vec::new()).await?;
+        self.confirm_encumbrance(tx_id, Vec::new()).await?;
 
         trace!(
             target: LOG_TARGET,
@@ -2825,7 +2825,7 @@ where
         self.resources
             .db
             .encumber_outputs(tx_id, src_outputs.clone(), dest_outputs)?;
-        self.confirm_encumberance(tx_id, Vec::new()).await?;
+        self.confirm_encumbrance(tx_id, Vec::new()).await?;
 
         trace!(
             target: LOG_TARGET,
@@ -3020,7 +3020,7 @@ where
         self.resources
             .db
             .encumber_outputs(tx_id, src_outputs.clone(), vec![output])?;
-        self.confirm_encumberance(tx_id, Vec::new()).await?;
+        self.confirm_encumbrance(tx_id, Vec::new()).await?;
 
         trace!(
             target: LOG_TARGET,
@@ -3241,7 +3241,7 @@ where
                 }
 
                 self.resources.db.encumber_outputs(tx_id, Vec::new(), outputs)?;
-                self.confirm_encumberance(tx_id, Vec::new()).await?;
+                self.confirm_encumbrance(tx_id, Vec::new()).await?;
                 let tx = stp.into_transaction()?;
 
                 Ok((tx_id, fee, amount - fee, tx))
@@ -3326,7 +3326,7 @@ where
         let tx = stp.into_transaction()?;
 
         self.resources.db.encumber_outputs(tx_id, Vec::new(), outputs)?;
-        self.confirm_encumberance(tx_id, Vec::new()).await?;
+        self.confirm_encumbrance(tx_id, Vec::new()).await?;
         Ok((tx_id, fee, amount - fee, tx))
     }
 
