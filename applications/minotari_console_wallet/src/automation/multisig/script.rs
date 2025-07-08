@@ -1,14 +1,29 @@
-use minotari_wallet::{output_manager_service::{error::OutputManagerError, handle::OutputManagerHandle, storage::models::DbWalletOutput}, transaction_service::handle::TransactionServiceHandle};
-use tari_common_types::{transaction::TxId, types::{CompressedPublicKey, PrivateKey, Signature, UncompressedPublicKey, UncompressedSignature}};
-use tari_core::{one_sided::public_key_to_output_encryption_key, transactions::transaction_key_manager::{TariKeyId, TransactionKeyManagerInterface}};
-use tari_crypto::{compressed_key::CompressedKey, ristretto::{RistrettoPublicKey, RistrettoSecretKey}};
+use minotari_wallet::{
+    output_manager_service::{error::OutputManagerError, handle::OutputManagerHandle, storage::models::DbWalletOutput},
+    transaction_service::handle::TransactionServiceHandle,
+};
+use tari_common_types::{
+    transaction::TxId,
+    types::{CompressedPublicKey, PrivateKey, Signature, UncompressedPublicKey, UncompressedSignature},
+};
+use tari_core::{
+    one_sided::public_key_to_output_encryption_key,
+    transactions::transaction_key_manager::{TariKeyId, TransactionKeyManagerInterface},
+};
+use tari_crypto::{
+    compressed_key::CompressedKey,
+    ristretto::{RistrettoPublicKey, RistrettoSecretKey},
+};
 use tari_script::{Opcode, TariScript};
 use tari_utilities::hex::Hex;
 
 use crate::automation::error::CommandError;
 
 pub fn is_multisig_utxo(tari_script: &TariScript) -> bool {
-    tari_script.script.iter().any(|op| matches!(op, Opcode::CheckMultiSigVerifyAggregatePubKey(..)))
+    tari_script
+        .script
+        .iter()
+        .any(|op| matches!(op, Opcode::CheckMultiSigVerifyAggregatePubKey(..)))
 }
 
 pub fn get_multi_sig_script_components(
@@ -24,7 +39,6 @@ pub fn get_multi_sig_script_components(
     )))
 }
 
-
 pub fn sum_public_keys(public_keys: &[CompressedKey<RistrettoPublicKey>]) -> Result<RistrettoPublicKey, CommandError> {
     let mut sum = UncompressedPublicKey::default();
     for key in public_keys {
@@ -33,7 +47,9 @@ pub fn sum_public_keys(public_keys: &[CompressedKey<RistrettoPublicKey>]) -> Res
     Ok(sum)
 }
 
-pub fn sum_public_keys_to_encryption_key(public_keys: &[CompressedKey<RistrettoPublicKey>]) -> Result<RistrettoSecretKey, CommandError> {
+pub fn sum_public_keys_to_encryption_key(
+    public_keys: &[CompressedKey<RistrettoPublicKey>],
+) -> Result<RistrettoSecretKey, CommandError> {
     let sum_public_keys = sum_public_keys(public_keys)?;
 
     let encryption_private_key =
@@ -42,10 +58,7 @@ pub fn sum_public_keys_to_encryption_key(public_keys: &[CompressedKey<RistrettoP
     Ok(encryption_private_key)
 }
 
-pub fn get_utxo_by_commitment_hash(
-    utxos: &[DbWalletOutput],
-    commitment_hash: String,
-) -> Option<&DbWalletOutput> {
+pub fn get_utxo_by_commitment_hash(utxos: &[DbWalletOutput], commitment_hash: String) -> Option<&DbWalletOutput> {
     utxos.iter().find(|utxo| utxo.commitment.to_hex() == commitment_hash)
 }
 
@@ -54,7 +67,9 @@ pub async fn select_utxos_for_amount(
     output_service: &mut OutputManagerHandle,
     target: u64,
 ) -> Result<Vec<DbWalletOutput>, CommandError> {
-    let mut utxos = output_service.get_unspent_outputs().await
+    let mut utxos = output_service
+        .get_unspent_outputs()
+        .await
         .map_err(CommandError::OutputManagerError)?;
 
     // Sort UTXOs by value (ascending)
@@ -78,7 +93,6 @@ pub async fn select_utxos_for_amount(
         ));
     }
 
-
     Ok(selected_utxos)
 }
 
@@ -91,7 +105,7 @@ pub async fn derive_multisig_recovery_key_id<KM: TransactionKeyManagerInterface>
 
     let encryption_key_id = key_manager.import_key(encryption_key).await?;
 
-    Ok(encryption_key_id) 
+    Ok(encryption_key_id)
 }
 
 /// finalizes an already encumbered a n-of-m transaction
@@ -102,7 +116,6 @@ pub async fn finalize_aggregate_utxo(
     script_signatures: Vec<Signature>,
     wallet_script_secret_key: PrivateKey,
 ) -> Result<TxId, CommandError> {
-
     let mut transaction_service = transaction_service.clone();
 
     let mut meta_sig = UncompressedSignature::default();

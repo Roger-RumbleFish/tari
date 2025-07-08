@@ -288,7 +288,9 @@ impl fmt::Display for OutputManagerRequest {
 
             GetOutputInfoByTxId(t) => write!(f, "GetOutputInfoByTxId: {}", t),
             FetchUnspentOutputs(hashes) => write!(f, "FetchUnspentOutputs: {:?}", hashes),
-            ConfirmEncumberance(tx_id, change_outputs) => write!(f, "ConfirmEncumberance: {}, {:?}", tx_id, change_outputs),
+            ConfirmEncumberance(tx_id, change_outputs) => {
+                write!(f, "ConfirmEncumberance: {}, {:?}", tx_id, change_outputs)
+            },
         }
     }
 }
@@ -1011,7 +1013,10 @@ impl OutputManagerHandle {
         }
     }
 
-   pub async fn fetch_unspent_outputs_from_node(&mut self, hashes: Vec<HashOutput>) -> Result<Vec<TransactionOutput>, OutputManagerError> {
+    pub async fn fetch_unspent_outputs_from_node(
+        &mut self,
+        hashes: Vec<HashOutput>,
+    ) -> Result<Vec<TransactionOutput>, OutputManagerError> {
         match self
             .handle
             .call(OutputManagerRequest::FetchUnspentOutputs(hashes))
@@ -1021,12 +1026,16 @@ impl OutputManagerHandle {
             _ => Err(OutputManagerError::UnexpectedApiResponse),
         }
     }
-    pub async fn confirm_encumbrance(&mut self, tx_id: TxId, change_outputs: Vec<WalletOutput>) -> Result<(), OutputManagerError> {
+
+    pub async fn confirm_encumbrance(
+        &mut self,
+        tx_id: TxId,
+        change_outputs: Vec<WalletOutput>,
+    ) -> Result<(), OutputManagerError> {
         self.handle
             .call(OutputManagerRequest::ConfirmEncumberance(tx_id, change_outputs))
             .await??;
 
         Ok(())
     }
-
 }

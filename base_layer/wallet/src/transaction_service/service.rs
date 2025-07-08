@@ -1072,7 +1072,7 @@ where
             TransactionServiceRequest::InsertCompletedTransaction(tx_id, transaction) => {
                 self.db.insert_completed_transaction(tx_id, transaction)?;
                 Ok(TransactionServiceResponse::TransactionImported(tx_id))
-            }
+            },
         };
 
         // If the individual handlers did not already send the API response then do it here.

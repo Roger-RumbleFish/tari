@@ -69,7 +69,8 @@ use crate::{
             OutboundTransaction,
             TxCancellationReason,
             WalletTransaction,
-        }},
+        },
+    },
     OperationId,
 };
 
@@ -441,7 +442,7 @@ impl fmt::Display for TransactionServiceRequest {
             },
             Self::InsertCompletedTransaction(tx_id, transaction) => {
                 write!(f, "InsertCompletedTransaction({}, {:?})", tx_id, transaction)
-            }
+            },
         }
     }
 }
@@ -1403,17 +1404,19 @@ impl TransactionServiceHandle {
 
     pub async fn insert_completed_transaction(
         &mut self,
-      tx_id: TxId,
+        tx_id: TxId,
         transaction: CompletedTransaction,
     ) -> Result<TxId, TransactionStorageError> {
-        self
-            .handle
-            .call(TransactionServiceRequest::InsertCompletedTransaction(tx_id, transaction))
+        self.handle
+            .call(TransactionServiceRequest::InsertCompletedTransaction(
+                tx_id,
+                transaction,
+            ))
             .await
             .map_err(|e| TransactionStorageError::UnexpectedResult(e.to_string()))?
             .map(|_| ())
             .map_err(|e| TransactionStorageError::UnexpectedResult(e.to_string()))?;
 
         Ok(tx_id)
-}
+    }
 }

@@ -90,7 +90,11 @@ use tari_comms::{
 };
 use tari_comms_dht::{envelope::NodeDestination, DhtDiscoveryRequester};
 use tari_core::{
-    blocks::pre_mine::get_pre_mine_items, consensus::ConsensusManager, covenants::Covenant, one_sided::shared_secret_to_output_encryption_key, transactions::{
+    blocks::pre_mine::get_pre_mine_items,
+    consensus::ConsensusManager,
+    covenants::Covenant,
+    one_sided::shared_secret_to_output_encryption_key,
+    transactions::{
         tari_amount::{uT, MicroMinotari, Minotari},
         transaction_components::{
             payment_id::{PaymentId, TxType},
@@ -107,10 +111,12 @@ use tari_core::{
         },
         transaction_key_manager::{TariKeyId, TransactionKeyManagerInterface},
         CryptoFactories,
-    }
+    },
 };
 use tari_crypto::{
-    commitment::HomomorphicCommitmentFactory, dhke::DiffieHellmanSharedSecret, ristretto::{RistrettoSecretKey}
+    commitment::HomomorphicCommitmentFactory,
+    dhke::DiffieHellmanSharedSecret,
+    ristretto::RistrettoSecretKey,
 };
 use tari_key_manager::{cipher_seed::CipherSeed, SeedWords};
 use tari_p2p::{auto_update::AutoUpdateConfig, peer_seeds::SeedPeer, PeerSeedsConfig};
@@ -125,7 +131,19 @@ use tokio::{
 use super::error::CommandError;
 use crate::{
     automation::{
-        multisig::{encumber::collect_multisig_utxo_encumber, io::{save_multisig_member_signatures, save_multisig_output, save_multisig_party_output, save_multisig_utxo_encumber}, party::{create_multisig_party_member_output, send_multisig_utxo_by_leader, sign_multisig_utxo_by_member}, script::{get_utxo_by_commitment_hash, is_multisig_utxo}, session::{create_multisig_output, make_utxo_multisig}}, utils::{
+        multisig::{
+            encumber::collect_multisig_utxo_encumber,
+            io::{
+                save_multisig_member_signatures,
+                save_multisig_output,
+                save_multisig_party_output,
+                save_multisig_utxo_encumber,
+            },
+            party::{create_multisig_party_member_output, send_multisig_utxo_by_leader, sign_multisig_utxo_by_member},
+            script::{get_utxo_by_commitment_hash, is_multisig_utxo},
+            session::{create_multisig_output, make_utxo_multisig},
+        },
+        utils::{
             create_pre_mine_output_dir,
             get_file_name,
             move_session_file_to_session_dir,
@@ -135,7 +153,19 @@ use crate::{
             read_verify_session_info,
             write_json_object_to_file_as_line,
             write_to_json_file,
-        }, PreMineSpendStep1SessionInfo, PreMineSpendStep2OutputsForLeader, PreMineSpendStep2OutputsForSelf, PreMineSpendStep3OutputsForParties, PreMineSpendStep3OutputsForSelf, PreMineSpendStep4OutputsForLeader, RecipientInfo, Step2OutputsForLeader, Step2OutputsForSelf, Step3OutputsForParties, Step3OutputsForSelf, Step4OutputsForLeader
+        },
+        PreMineSpendStep1SessionInfo,
+        PreMineSpendStep2OutputsForLeader,
+        PreMineSpendStep2OutputsForSelf,
+        PreMineSpendStep3OutputsForParties,
+        PreMineSpendStep3OutputsForSelf,
+        PreMineSpendStep4OutputsForLeader,
+        RecipientInfo,
+        Step2OutputsForLeader,
+        Step2OutputsForSelf,
+        Step3OutputsForParties,
+        Step3OutputsForSelf,
+        Step4OutputsForLeader,
     },
     cli::{CliCommands, CliRecipientInfo, MakeItRainTransactionType},
     init::init_wallet,
@@ -2120,7 +2150,8 @@ pub async fn command_runner(
                     } else {
                         for (i, utxo) in unblinded_utxos.iter().enumerate() {
                             println!(
-                                "{}. Value: {}, Spending Key: {:?}, Script Key: {:?}, Features: {}, Commitment hash: {}, isMultisig: {}",
+                                "{}. Value: {}, Spending Key: {:?}, Script Key: {:?}, Features: {}, Commitment hash: \
+                                 {}, isMultisig: {}",
                                 i + 1,
                                 utxo.0.value,
                                 if args.with_private_keys {
@@ -2831,21 +2862,28 @@ pub async fn command_runner(
             },
 
             SendMultisigUtxoLeader(args) => {
-                send_multisig_utxo_by_leader(wallet.transaction_service.clone(),wallet.key_manager_service.clone(),&args.session_id).await?;
+                send_multisig_utxo_by_leader(
+                    wallet.transaction_service.clone(),
+                    wallet.key_manager_service.clone(),
+                    &args.session_id,
+                )
+                .await?;
             },
 
             SignMultisigUtxoMember(args) => {
                 let own_address: TariAddress = wallet.get_wallet_interactive_address().await?;
-                let signatures = sign_multisig_utxo_by_member(wallet.key_manager_service.clone(), args.session_id.clone()).await?;
+                let signatures =
+                    sign_multisig_utxo_by_member(wallet.key_manager_service.clone(), args.session_id.clone()).await?;
                 save_multisig_member_signatures(&args.session_id, signatures, own_address.clone()).await?;
             },
 
             CollectMultisigUtxoEncumber(args) => {
                 let consensus_manager = ConsensusManager::builder(wallet.network.as_network())
-                .build().map_err(|e| CommandError::General(e.to_string()))?;
-                
+                    .build()
+                    .map_err(|e| CommandError::General(e.to_string()))?;
+
                 let output_service = wallet.output_manager_service.clone();
-                let transaction_service =  wallet.transaction_service.clone();
+                let transaction_service = wallet.transaction_service.clone();
 
                 let client = wallet
                     .wallet_connectivity
@@ -2864,7 +2902,6 @@ pub async fn command_runner(
                 }
                 .ok_or(CommandError::General("Could not get tip height".to_string()))?;
 
-
                 let own_address: TariAddress = wallet.get_wallet_interactive_address().await?;
 
                 let outputs = collect_multisig_utxo_encumber(
@@ -2873,8 +2910,9 @@ pub async fn command_runner(
                     wallet.key_manager_service.clone(),
                     &consensus_manager.consensus_constants(height),
                     args.session_id.clone(),
-                    own_address
-                ).await?;
+                    own_address,
+                )
+                .await?;
 
                 save_multisig_utxo_encumber(&args.session_id.clone(), outputs).await?;
             },
@@ -2891,43 +2929,49 @@ pub async fn command_runner(
             },
 
             CreateMultisigUtxo(args) => {
-                let mut transaction_service = wallet
-                    .transaction_service.clone();
-
-                let mut output_service = wallet.output_manager_service.clone();
-
-                if (args.n as usize) != args.public_keys.len() {
-                    return Err(CommandError::General("n must be equal to the number of public keys".to_string()));
+                if (args.m as usize) > args.public_keys.len() {
+                    return Err(CommandError::General(
+                        "m must be less than or equal to the number of public keys".to_string(),
+                    ));
                 }
 
-                let utxos = output_service.get_unspent_outputs().await
+                let output_service = wallet.output_manager_service.clone();
+                let transaction_service = wallet.transaction_service.clone();
+
+                let utxos = output_service
+                    .clone()
+                    .get_unspent_outputs()
+                    .await
                     .map_err(CommandError::OutputManagerError)?;
 
-                 let utxo = get_utxo_by_commitment_hash(&utxos, args.utxo_commitment_hash)
-                     .ok_or(CommandError::General("UTXO not found by commitment hash".to_string()))?;
+                let utxo = get_utxo_by_commitment_hash(&utxos, args.utxo_commitment_hash)
+                    .ok_or(CommandError::General("UTXO not found by commitment hash".to_string()))?;
 
-                 let public_keys = args.public_keys.iter().map(|pk| CompressedPublicKey::from(pk.clone())).collect::<Vec<_>>();
-
+                let public_keys = args
+                    .public_keys
+                    .iter()
+                    .map(|pk| CompressedPublicKey::from(pk.clone()))
+                    .collect::<Vec<_>>();
 
                 let result = make_utxo_multisig(
-                    &mut output_service,
-                    &mut transaction_service,
+                    output_service,
+                    transaction_service,
                     wallet.key_manager_service.clone(),
                     utxo.clone(),
                     args.m,
-                    args.n,
                     public_keys,
-                ).await;
+                )
+                .await;
 
-               match result {
-                   Ok(tx_id) => {
+                match result {
+                    Ok(tx_id) => {
                         tx_ids.push(tx_id);
                         debug!(target: LOG_TARGET, "Utxo changed to multisig with tx_id {}", tx_id);
                         println!("Utxo changed to multisig succeeded");
                     },
                     Err(e) => {
                         eprintln!("Error creating multisig UTXO: {}", e);
-                    }
+                    },
                 }
             },
             PrepareOneSidedTransactionForSigning(args) => {

@@ -71,7 +71,8 @@ use tari_crypto::{
     range_proof::RangeProofService as RPService,
     ristretto::{
         bulletproofs_plus::{RistrettoExtendedMask, RistrettoExtendedWitness},
-        RistrettoComSig, RistrettoSecretKey,
+        RistrettoComSig,
+        RistrettoSecretKey,
     },
 };
 use tari_hashing::KeyManagerTransactionsHashDomain;
@@ -80,9 +81,7 @@ use tari_key_manager::{
     key_manager_service::{AddResult, KeyDigest},
 };
 use tari_script::{CheckSigSchnorrSignature, CompressedCheckSigSchnorrSignature, TariScript};
-
 use tari_utilities::{ByteArray, Hidden};
-
 use tokio::sync::RwLock;
 use zeroize::Zeroize;
 
@@ -1722,7 +1721,7 @@ where TBackend: TransactionKeyManagerBackend + 'static
         let ephemeral_private_key = spend_private_key + script_private_key;
         Ok(ephemeral_private_key)
     }
-  
+
     async fn prepare_cipher(
         &self,
         encryption_key_id: Option<&TariKeyId>,

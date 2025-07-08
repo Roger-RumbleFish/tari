@@ -1,8 +1,16 @@
 use minotari_app_utilities::utilities::UniPublicKey;
 use serde::{Deserialize, Serialize};
-use tari_common_types::{tari_address::TariAddress, transaction::TxId, types::{CompressedCommitment, CompressedPublicKey, PrivateKey, Signature}};
-use tari_core::transactions::{tari_amount::MicroMinotari, transaction_components::{EncryptedData, OutputFeatures}, transaction_key_manager::TariKeyId};
-use tari_crypto::{ristretto::{RistrettoSecretKey}};
+use tari_common_types::{
+    tari_address::TariAddress,
+    transaction::TxId,
+    types::{CompressedCommitment, CompressedPublicKey, PrivateKey, Signature},
+};
+use tari_core::transactions::{
+    tari_amount::MicroMinotari,
+    transaction_components::{EncryptedData, OutputFeatures},
+    transaction_key_manager::TariKeyId,
+};
+use tari_crypto::ristretto::RistrettoSecretKey;
 use tari_script::{CompressedCheckSigSchnorrSignature, ExecutionStack, TariScript};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,7 +21,7 @@ pub struct MultisigOutput {
 
     pub minimum_signatures: u8,
     pub parties_public_keys: Vec<UniPublicKey>,
-    
+
     pub fee_per_gram: MicroMinotari,
     pub value: MicroMinotari,
     pub recipient_address: TariAddress,
@@ -78,8 +86,8 @@ pub struct MemberCommitmentSignature {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemberMultisigSignature {
-   pub output_index: usize,
-   pub script_signature: Signature,
-   pub metadata_signature: Signature,
-   pub script_offset: PrivateKey,
+    pub output_index: usize,
+    pub script_signature: Signature,
+    pub metadata_signature: Signature,
+    pub script_offset: PrivateKey,
 }

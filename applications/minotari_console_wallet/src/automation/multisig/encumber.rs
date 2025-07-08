@@ -1,48 +1,80 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
-use tari_common_types::{
-    key_branches::TransactionKeyManagerBranch, tari_address::TariAddress, transaction::{TransactionDirection, TransactionStatus, TxId}, types::{CompressedPublicKey, FixedHash, HashOutput, UncompressedCommitment, UncompressedPublicKey}
+use minotari_wallet::{
+    output_manager_service::{error::OutputManagerError, handle::OutputManagerHandle},
+    storage::sqlite_utilities::WalletDbConnection,
+    transaction_service::{handle::TransactionServiceHandle, storage::models::CompletedTransaction},
 };
-
-use tari_core::{borsh::SerializedSize, consensus::ConsensusConstants, covenants::Covenant, transactions::{fee::Fee, transaction_components::{payment_id::PaymentId, KernelFeatures, Transaction}, transaction_protocol::sender::TransactionSenderMessage, CryptoFactories, ReceiverTransactionProtocol, SenderTransactionProtocol}};
-use tari_core::transactions::transaction_components::RangeProofType;
-
 use tari_common_types::{
+    key_branches::TransactionKeyManagerBranch,
+    tari_address::TariAddress,
+    transaction::{TransactionDirection, TransactionStatus, TxId},
     types::{
         CompressedCommitment,
-    },
-};
-
-use tari_core::transactions::{
-    transaction_components::{
-        OutputFeatures,
+        CompressedPublicKey,
+        FixedHash,
+        HashOutput,
+        UncompressedCommitment,
+        UncompressedPublicKey,
     },
 };
 use tari_comms::types::CommsDHKE;
-use tari_utilities::hex::{Hex};
-use tari_script::{push_pubkey_script, script, CompressedCheckSigSchnorrSignature, ExecutionStack, StackItem};
-use std::{collections::HashMap};
-use minotari_wallet::{
-    output_manager_service::{error::OutputManagerError, handle::OutputManagerHandle},
-    storage::sqlite_utilities::WalletDbConnection, transaction_service::{handle::TransactionServiceHandle, storage::models::CompletedTransaction},
+use tari_core::{
+    borsh::SerializedSize,
+    consensus::ConsensusConstants,
+    covenants::Covenant,
+    one_sided::{shared_secret_to_output_encryption_key, shared_secret_to_output_spending_key},
+    transactions::{
+        fee::Fee,
+        tari_amount::MicroMinotari,
+        transaction_components::{
+            payment_id::PaymentId,
+            EncryptedData,
+            KernelFeatures,
+            OutputFeatures,
+            RangeProofType,
+            Transaction,
+            WalletOutput,
+            WalletOutputBuilder,
+        },
+        transaction_key_manager::{
+            storage::sqlite_db::TransactionKeyManagerSqliteDatabase,
+            TariKeyId,
+            TransactionKeyManagerInterface,
+            TransactionKeyManagerWrapper,
+        },
+        transaction_protocol::sender::TransactionSenderMessage,
+        CryptoFactories,
+        ReceiverTransactionProtocol,
+        SenderTransactionProtocol,
+    },
 };
-use tari_core::{one_sided::{shared_secret_to_output_encryption_key, shared_secret_to_output_spending_key}, transactions::{
-    tari_amount::{MicroMinotari}, transaction_components::{EncryptedData, WalletOutput, WalletOutputBuilder}, transaction_key_manager::{
-        storage::sqlite_db::TransactionKeyManagerSqliteDatabase,
-        TariKeyId,
-        TransactionKeyManagerInterface,
-        TransactionKeyManagerWrapper,
-    }
-}};
-use tari_utilities::ByteArray;
-use crate::automation::{error::CommandError, multisig::{io::{load_leader_party_output, load_multisig_output}, script::{get_multi_sig_script_components, get_utxo_by_commitment_hash, sum_public_keys, sum_public_keys_to_encryption_key}, types::{MultisigEncumberOutput, MultisigOutput}}};
+use tari_script::{push_pubkey_script, script, CompressedCheckSigSchnorrSignature, ExecutionStack, StackItem};
+use tari_utilities::{hex::Hex, ByteArray};
+
+use crate::automation::{
+    error::CommandError,
+    multisig::{
+        io::{load_leader_party_output, load_multisig_output},
+        script::{
+            get_multi_sig_script_components,
+            get_utxo_by_commitment_hash,
+            sum_public_keys,
+            sum_public_keys_to_encryption_key,
+        },
+        types::{MultisigEncumberOutput, MultisigOutput},
+    },
+};
 
 pub async fn collect_multisig_utxo_encumber(
-    output_service:  OutputManagerHandle,
+    output_service: OutputManagerHandle,
     transaction_service: TransactionServiceHandle,
     key_manager: TransactionKeyManagerWrapper<TransactionKeyManagerSqliteDatabase<WalletDbConnection>>,
     consensus_constants: &ConsensusConstants,
     session_id: String,
-    own_address: TariAddress) -> Result<Vec<MultisigEncumberOutput>, CommandError> {
+    own_address: TariAddress,
+) -> Result<Vec<MultisigEncumberOutput>, CommandError> {
     // Read multisig session config
     let config: MultisigOutput = load_multisig_output(&session_id).await.map_err(|e| {
         eprintln!("Error reading multisig output for session {}: {}", session_id, e);
@@ -66,9 +98,13 @@ pub async fn collect_multisig_utxo_encumber(
         let member_output = match load_leader_party_output(&session_id, CompressedPublicKey::from(pubkey.clone())) {
             Ok(output) => output,
             Err(e) => {
-                println!("Warning: Could not load leader party output for {}: {}. Skipping.", CompressedPublicKey::from(pubkey.clone()).to_public_key()?.to_hex(), e);
+                println!(
+                    "Warning: Could not load leader party output for {}: {}. Skipping.",
+                    CompressedPublicKey::from(pubkey.clone()).to_public_key()?.to_hex(),
+                    e
+                );
                 continue;
-            }
+            },
         };
 
         for sig in member_output.commitment_signatures {
@@ -80,9 +116,12 @@ pub async fn collect_multisig_utxo_encumber(
         }
     }
 
-    let utxos = output_service.clone().get_unspent_outputs().await
-            .map_err(CommandError::OutputManagerError)?;
-        
+    let utxos = output_service
+        .clone()
+        .get_unspent_outputs()
+        .await
+        .map_err(CommandError::OutputManagerError)?;
+
     let mut encumber_outputs = Vec::new();
 
     for (current_index, commitment) in config.commitments.iter().enumerate() {
@@ -105,11 +144,13 @@ pub async fn collect_multisig_utxo_encumber(
             dh_shared_secret_public_keys.clone(),
             config.recipient_address.clone(),
             utxo.payment_id.clone(), // ??
-            utxo.mined_height.ok_or(CommandError::General("UTXO mined height is missing".to_string()))?, // good
+            utxo.mined_height
+                .ok_or(CommandError::General("UTXO mined height is missing".to_string()))?, // good
             RangeProofType::BulletProofPlus,
             MicroMinotari::zero(), // minimum value promise, can be zero for now
             utxo.hash,
-        ).await;
+        )
+        .await;
 
         match result {
             Ok((
@@ -123,7 +164,7 @@ pub async fn collect_multisig_utxo_encumber(
                 shared_secret_public_key,
             )) => {
                 encumber_outputs.push(MultisigEncumberOutput {
-                    tx_id: tx_id,
+                    tx_id,
                     output_index: current_index,
                     input_stack: transaction.body.inputs()[0].clone().input_data,
                     input_script: transaction.body.inputs()[0].script().unwrap().clone(),
@@ -190,7 +231,6 @@ pub async fn encumber_aggregate_utxo(
     ),
     CommandError,
 > {
-
     let tx_id = TxId::new_random();
     let mut transaction_service = transaction_service.clone();
     let mut output_service = output_service.clone();
@@ -234,12 +274,12 @@ pub async fn encumber_aggregate_utxo(
 
             let commitment_mask_key_id = key_manager.import_key(commitment_mask.clone().into()).await?;
             let ephemeral_pubkey = key_manager
-            .stealth_address_script_spending_key(&commitment_mask_key_id, &public_key.clone())
-            .await?;
+                .stealth_address_script_spending_key(&commitment_mask_key_id, &public_key.clone())
+                .await?;
 
             let ephemeral_private_key = key_manager
-            .stealth_address_script_spending_key_id(&commitment_mask_key_id, &spend_key.key_id)
-            .await?;
+                .stealth_address_script_spending_key_id(&commitment_mask_key_id, &spend_key.key_id)
+                .await?;
 
             let key_id = key_manager.import_key(ephemeral_private_key).await?;
 
@@ -249,18 +289,15 @@ pub async fn encumber_aggregate_utxo(
             commitment_bytes.clone_from_slice(&output.commitment.as_bytes());
 
             // lets add our own signature to the list
-            let self_signature = key_manager
-                .sign_script_message(&key_id, &commitment_bytes)
-                .await?;
+            let self_signature = key_manager.sign_script_message(&key_id, &commitment_bytes).await?;
 
             script_input_shares.insert(ephemeral_pubkey.clone(), self_signature);
 
             // the order here is important, we need to add the signatures in the same order as public keys were
             // added to the script originally
             for key in &multi_sig_public_keys {
-                 if let Some(signature) = script_input_shares.get(&key) {
-               
-                     script_signatures.push(StackItem::Signature(signature.clone()));
+                if let Some(signature) = script_input_shares.get(&key) {
+                    script_signatures.push(StackItem::Signature(signature.clone()));
                     // our own key should not be aggregated yet, it will be added with the script signing
                     if key != &ephemeral_pubkey {
                         aggregated_script_public_key_shares =
@@ -315,7 +352,7 @@ pub async fn encumber_aggregate_utxo(
     // The entire input will be spent to a single recipient with no change
     let output_features = OutputFeatures {
         maturity: original_maturity,
-        range_proof_type: range_proof_type,
+        range_proof_type,
         ..Default::default()
     };
 
@@ -335,10 +372,7 @@ pub async fn encumber_aggregate_utxo(
     let amount = input.value - fee;
 
     // Create sender transaction protocol builder with recipient data and no change
-    let mut builder = SenderTransactionProtocol::builder(
-        consensus_constants.clone(),
-        key_manager.clone(),
-    );
+    let mut builder = SenderTransactionProtocol::builder(consensus_constants.clone(), key_manager.clone());
 
     builder
         .with_lock_height(0)
@@ -376,7 +410,8 @@ pub async fn encumber_aggregate_utxo(
             .get_next_key(TransactionKeyManagerBranch::OneSidedSenderOffset.get_branch_key())
             .await?
             .key_id,
-    ).map_err(|e| CommandError::General(format!("Failed to change recipient sender offset private key: {}", e)))?;
+    )
+    .map_err(|e| CommandError::General(format!("Failed to change recipient sender offset private key: {}", e)))?;
 
     // This call is needed to advance the state from `SingleRoundMessageReady` to `SingleRoundMessageReady`,
     // but the returned value is not used
@@ -385,21 +420,24 @@ pub async fn encumber_aggregate_utxo(
         .await
         .map_err(|e| CommandError::General(format!("Failed to build single round message: {}", e)))?;
 
-    output_service.confirm_encumbrance(tx_id, Vec::new())
-    .await?;
+    output_service.confirm_encumbrance(tx_id, Vec::new()).await?;
 
     // Prepare receiver part of the transaction
     // Diffie-Hellman shared secret `k_Ob * K_Sb = K_Ob * k_Sb` results in a public key, which is fed into
     // KDFs to produce the spending and encryption keys. All player's shares are added together to produce the
     // shared secret.
-    let sender_offset_private_key_id_self =
-        stp.get_recipient_sender_offset_private_key()
-            .map_err(|e| CommandError::General(format!("Failed to get recipient sender offset private key (TxId: {}): {}", tx_id, e)))?
-            .ok_or(CommandError::General(format!(
-                "Missing sender offset private key ID (TxId: {})",
-                tx_id
-
-            )))?;
+    let sender_offset_private_key_id_self = stp
+        .get_recipient_sender_offset_private_key()
+        .map_err(|e| {
+            CommandError::General(format!(
+                "Failed to get recipient sender offset private key (TxId: {}): {}",
+                tx_id, e
+            ))
+        })?
+        .ok_or(CommandError::General(format!(
+            "Missing sender offset private key ID (TxId: {})",
+            tx_id
+        )))?;
 
     let shared_secret = {
         let mut key_sum = UncompressedPublicKey::default();
@@ -484,21 +522,15 @@ pub async fn encumber_aggregate_utxo(
         .await
         .map_err(|e| CommandError::General(format!("Error (TxId: {}): {}", tx_id, e)))?;
 
-
     let total_metadata_ephemeral_public_key = aggregated_metadata_ephemeral_public_key_shares +
         &output.metadata_signature.ephemeral_pubkey().to_public_key()?;
 
     // Finalize the partial transaction - it will not be valid at this stage as the metadata and script
     // signatures are not yet complete.
-    let rtp = ReceiverTransactionProtocol::new(
-        sender_message,
-        output,
-        &key_manager,
-        &consensus_constants,
-    )
-    .await;
+    let rtp = ReceiverTransactionProtocol::new(sender_message, output, &key_manager, &consensus_constants).await;
 
-    let recipient_reply = rtp.get_signed_data()
+    let recipient_reply = rtp
+        .get_signed_data()
         .map_err(|e| CommandError::General(format!("Failed to get signed data: {}", e)))?
         .clone();
 
@@ -523,7 +555,8 @@ pub async fn encumber_aggregate_utxo(
     let total_script_nonce = aggregated_script_signature_public_nonces +
         &updated_input.script_signature.ephemeral_pubkey().to_public_key()?;
 
-    let mut tx = stp.get_transaction()
+    let mut tx = stp
+        .get_transaction()
         .map_err(|e| CommandError::General(format!("Failed to get transaction: {}", e)))?
         .clone();
 
@@ -532,7 +565,9 @@ pub async fn encumber_aggregate_utxo(
     tx_body.update_script_signature(updated_input.commitment()?, updated_input.script_signature.clone())?;
     tx.body = tx_body;
 
-    let fee = stp.get_fee_amount().map_err(|e| CommandError::General(format!("Failed to get fee amount: {}", e)))?;
+    let fee = stp
+        .get_fee_amount()
+        .map_err(|e| CommandError::General(format!("Failed to get fee amount: {}", e)))?;
 
     // shared secret does not support debug so we manually convert this to a public key
     let shared_secret_bytes = shared_secret.as_bytes();
@@ -553,12 +588,7 @@ pub async fn encumber_aggregate_utxo(
         kernel_sum = &kernel_sum + &kernel.excess.to_commitment()?;
     }
 
-    let all_outputs = tx
-        .body
-        .outputs()
-        .iter()
-        .map(|o| o.hash())
-        .collect::<Vec<HashOutput>>();
+    let all_outputs = tx.body.outputs().iter().map(|o| o.hash()).collect::<Vec<HashOutput>>();
 
     let completed_tx = CompletedTransaction::new_with_output_hashes(
         tx_id,
@@ -576,7 +606,8 @@ pub async fn encumber_aggregate_utxo(
         all_outputs,
         vec![],
         vec![],
-    ).map_err(|e| CommandError::General(format!("{}: {}", tx_id, e)))?;
+    )
+    .map_err(|e| CommandError::General(format!("{}: {}", tx_id, e)))?;
 
     transaction_service
         .insert_completed_transaction(tx_id, completed_tx)
@@ -593,4 +624,4 @@ pub async fn encumber_aggregate_utxo(
         CompressedPublicKey::new_from_pk(total_script_nonce),
         shared_secret_public_key,
     ))
-    }
+}

@@ -1,9 +1,21 @@
+use std::fs;
+
 use serde::de::DeserializeOwned;
 use tari_common_types::{tari_address::TariAddress, types::CompressedPublicKey};
-use tari_utilities::hex::{Hex};
-use tari_crypto::{compressed_key::CompressedKey, ristretto::{RistrettoPublicKey}};
-use std::{fs};
-use crate::automation::{error::CommandError, multisig::types::{MemberMultisigSignature, MultisigEncumberOutput, MultisigLeaderPartyOutput, MultisigMemberPartyOutput, MultisigOutput, MultisigPartyOutput}};
+use tari_crypto::{compressed_key::CompressedKey, ristretto::RistrettoPublicKey};
+use tari_utilities::hex::Hex;
+
+use crate::automation::{
+    error::CommandError,
+    multisig::types::{
+        MemberMultisigSignature,
+        MultisigEncumberOutput,
+        MultisigLeaderPartyOutput,
+        MultisigMemberPartyOutput,
+        MultisigOutput,
+        MultisigPartyOutput,
+    },
+};
 
 pub async fn save_multisig_output(multisig_output: MultisigOutput) -> Result<(), CommandError> {
     let output = multisig_output.clone();
@@ -17,14 +29,12 @@ pub async fn save_multisig_output(multisig_output: MultisigOutput) -> Result<(),
 
     print!("Saving multisig output to: {}", out_file.display());
     let file = fs::File::create(&out_file)?;
-    serde_json::to_writer_pretty(file, &output)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    serde_json::to_writer_pretty(file, &output).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     Ok(())
 }
 
 pub async fn load_multisig_output(session_id: &str) -> Result<MultisigOutput, CommandError> {
-
     let out_dir = std::path::Path::new("/wallet_data");
     if !out_dir.exists() {
         std::fs::create_dir_all(out_dir)?;
@@ -32,11 +42,10 @@ pub async fn load_multisig_output(session_id: &str) -> Result<MultisigOutput, Co
 
     let file_path = std::path::Path::new("/wallet_data").join(format!("multisig_output-{}.json", session_id));
 
-
     let file = fs::File::open(file_path)?;
     let multisig_output: MultisigOutput = serde_json::from_reader(file)
         .map_err(|e| CommandError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-    
+
     Ok(multisig_output)
 }
 
@@ -49,7 +58,7 @@ pub async fn save_multisig_party_output(multisig_output: MultisigPartyOutput) ->
         std::fs::create_dir_all(out_dir)?;
     }
 
-   // Save leader output (include user address in filename)
+    // Save leader output (include user address in filename)
     let leader_file = out_dir.join(format!(
         "multisig_party_output-leader-{}-{}.json",
         leader_output.session_id,
@@ -115,7 +124,7 @@ pub fn load_member_party_output(
 
 pub async fn save_multisig_utxo_encumber(
     session_id: &str,
-    outputs: Vec<MultisigEncumberOutput>
+    outputs: Vec<MultisigEncumberOutput>,
 ) -> Result<(), CommandError> {
     let out_dir = std::path::Path::new("/wallet_data");
     if !out_dir.exists() {
@@ -125,8 +134,7 @@ pub async fn save_multisig_utxo_encumber(
     let out_file = out_dir.join(format!("multisig_utxo_encumber_outputs-{}.json", session_id));
 
     let file = fs::File::create(&out_file)?;
-    serde_json::to_writer_pretty(file, &outputs)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    serde_json::to_writer_pretty(file, &outputs).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     Ok(())
 }
@@ -153,13 +161,17 @@ pub async fn load_multisig_utxo_encumber(session_id: &str) -> Result<Vec<Multisi
     Ok(outputs)
 }
 
-pub async fn save_multisig_member_signatures(session_id: &str, signatures: Vec<MemberMultisigSignature>, own_address: TariAddress) -> Result<(), CommandError> {
+pub async fn save_multisig_member_signatures(
+    session_id: &str,
+    signatures: Vec<MemberMultisigSignature>,
+    own_address: TariAddress,
+) -> Result<(), CommandError> {
     let out_dir = std::path::Path::new("/wallet_data");
     if !out_dir.exists() {
         std::fs::create_dir_all(out_dir)?;
     }
 
-   // Save member signatures (include user address in filename)
+    // Save member signatures (include user address in filename)
     let member_file = out_dir.join(format!(
         "multisig_member_signatures-{}-{}.json",
         session_id,
@@ -167,13 +179,15 @@ pub async fn save_multisig_member_signatures(session_id: &str, signatures: Vec<M
     ));
 
     let file = fs::File::create(&member_file)?;
-    serde_json::to_writer_pretty(file, &signatures)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    serde_json::to_writer_pretty(file, &signatures).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     Ok(())
 }
 
-pub async fn load_multisig_member_signatures(session_id: &str, member_public_key: CompressedPublicKey) -> Result<Vec<MemberMultisigSignature>, CommandError> {
+pub async fn load_multisig_member_signatures(
+    session_id: &str,
+    member_public_key: CompressedPublicKey,
+) -> Result<Vec<MemberMultisigSignature>, CommandError> {
     let out_dir = std::path::Path::new("/wallet_data");
     if !out_dir.exists() {
         std::fs::create_dir_all(out_dir)?;

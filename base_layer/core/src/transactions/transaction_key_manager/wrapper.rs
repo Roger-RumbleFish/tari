@@ -30,7 +30,10 @@ use tari_common_types::{
     wallet_types::WalletType,
 };
 use tari_comms::types::CommsDHKE;
-use tari_crypto::{hashing::DomainSeparatedHash, ristretto::{RistrettoComSig, RistrettoSecretKey}};
+use tari_crypto::{
+    hashing::DomainSeparatedHash,
+    ristretto::{RistrettoComSig, RistrettoSecretKey},
+};
 use tari_key_manager::{cipher_seed::CipherSeed, key_manager_service::AddResult};
 use tari_script::{CompressedCheckSigSchnorrSignature, TariScript};
 use tokio::sync::RwLock;
@@ -606,7 +609,7 @@ where TBackend: TransactionKeyManagerBackend + 'static
             .stealth_address_script_spending_key_id(commitment_mask_key_id, spend_key_id)
             .await
     }
- 
+
     async fn encrypted_key(
         &self,
         key_id: &TariKeyId,
