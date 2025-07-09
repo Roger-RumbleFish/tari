@@ -31,7 +31,6 @@ use std::{
     str::FromStr,
     time::{Duration, Instant},
 };
-
 use chrono::{DateTime, Utc};
 use dialoguer::Input as InputPrompt;
 use digest::Digest;
@@ -43,8 +42,7 @@ use minotari_wallet::{
         handle::{OutputManagerEvent, OutputManagerHandle},
         service::UseOutput,
         UtxoSelectionCriteria,
-    },
-    transaction_service::{
+    }, transaction_service::{
         handle::{TransactionEvent, TransactionServiceHandle},
         offline_signing::models::{
             PrepareOneSidedTransactionForSigningResult,
@@ -52,11 +50,7 @@ use minotari_wallet::{
             TransactionResult,
         },
         storage::models::WalletTransaction,
-    },
-    utxo_scanner_service::handle::UtxoScannerEvent,
-    TransactionStage,
-    WalletConfig,
-    WalletSqlite,
+    }, utxo_scanner_service::handle::UtxoScannerEvent, TransactionStage, WalletConfig, WalletSqlite
 };
 use serde::Serialize;
 use sha2::Sha256;
@@ -115,6 +109,8 @@ use tokio::{
     sync::{broadcast, mpsc},
     time::{sleep, timeout},
 };
+
+
 
 use super::error::CommandError;
 use crate::{
@@ -2570,22 +2566,15 @@ pub async fn command_runner(
                 let output_service = wallet.output_manager_service.clone();
                 let transaction_service = wallet.transaction_service.clone();
 
-                let client = wallet
-                    .wallet_connectivity
-                    .clone()
-                    .obtain_base_node_wallet_rpc_client_timeout(Duration::from_secs(10))
-                    .await;
+                // let client = wallet
+                // .wallet_connectivity
+                // .clone()
+                // .obtain_base_node_wallet_rpc_client()
+                // .await;
 
-                let height = match client {
-                    Some(mut client) => client
-                        .get_tip_info()
-                        .await
-                        .ok()
-                        .and_then(|t| t.metadata)
-                        .map(|m| m.best_block_height),
-                    None => None,
-                }
-                .ok_or(CommandError::General("Could not get tip height".to_string()))?;
+                let height = wallet.db.get_last_scanned_height()?.unwrap_or_default();
+  
+            
 
                 let own_address: TariAddress = wallet.get_wallet_interactive_address().await?;
 

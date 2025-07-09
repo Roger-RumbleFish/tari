@@ -479,6 +479,7 @@ impl fmt::Display for TransactionServiceRequest {
             },
             Self::InsertCompletedTransaction(tx_id, transaction) => {
                 write!(f, "InsertCompletedTransaction({}, {:?})", tx_id, transaction)
+            },
 
             Self::SubmitValidatorEvictionProof {
                 amount,

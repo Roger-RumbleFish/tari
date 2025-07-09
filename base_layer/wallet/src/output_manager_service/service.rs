@@ -554,7 +554,12 @@ where
                 Ok(OutputManagerResponse::OutputInfoByTxId(output_statuses_by_tx_id))
             },
             OutputManagerRequest::FetchUnspentOutputs(hashes) => {
-                let outputs = self.fetch_unspent_outputs_from_node(hashes).await?;
+                let mut outputs = Vec::new();
+                for hash in hashes {
+                    if let Some(output) = self.fetch_unspent_outputs_from_node(hash).await? {
+                        outputs.push(output);
+                    }
+                }
                 Ok(OutputManagerResponse::FetchUnspentOutputs(outputs))
             },
             OutputManagerRequest::ConfirmEncumberance(tx_id, change_outputs) => {
@@ -1418,7 +1423,7 @@ where
         // Fetch the output from the blockchain or use provided
         let output = match use_output {
             UseOutput::FromBlockchain(output_hash) => {
-                self.fetch_utxo_from_node(output_hash).await?.ok_or_else(|| {
+                self.fetch_unspent_outputs_from_node(output_hash).await?.ok_or_else(|| {
                     OutputManagerError::ServiceError(format!(
                         "Output with hash {} not found in blockchain (TxId: {})",
                         output_hash, tx_id
@@ -1792,7 +1797,7 @@ where
         minimum_value_promise: MicroMinotari,
     ) -> Result<(Transaction, MicroMinotari, MicroMinotari), OutputManagerError> {
         // Fetch the output from the blockchain
-        let output = self.fetch_utxo_from_node(output_hash).await?.ok_or_else(|| {
+        let output = self.fetch_unspent_outputs_from_node(output_hash).await?.ok_or_else(|| {
             OutputManagerError::ServiceError(format!(
                 "Output with hash {} not found in blockchain (TxId: {})",
                 output_hash, tx_id

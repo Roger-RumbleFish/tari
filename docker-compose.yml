@@ -7,7 +7,12 @@ services:
     volumes:
       - ./wallet1_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
-    command: ["--network", "esmeralda"]
+    command: [
+        "--network",
+        "esmeralda",
+        # "--custom_base_node",
+        # "https://rpc.esmeralda.tari.com",
+      ]
 
   wallet2:
     build: .
@@ -15,7 +20,13 @@ services:
     volumes:
       - ./wallet2_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
-    command: ["--network", "esmeralda"]
+    command:
+      [
+        "--network",
+        "esmeralda",
+        "--http_client_url",
+        "https://rpc.esmeralda.tari.com",
+      ]
     ports:
       - "44871:44871"
   wallet3:
@@ -23,5 +34,13 @@ services:
     container_name: wallet3
     volumes:
       - ./wallet3_data:/wallet_data
+    entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
+    command: ["--network", "esmeralda"]
+
+  wallet4:
+    build: .
+    container_name: wallet4
+    volumes:
+      - ./wallet4_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
     command: ["--network", "esmeralda"]

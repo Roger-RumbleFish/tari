@@ -646,14 +646,14 @@ where
             .scan_outputs_for_multisig(outputs.clone().into_iter().map(|o| (o, None)).collect())
             .await?
             .into_iter()
-            .map(|ro| -> Result<_, UtxoScannerError> {
+            .map(|ro| -> Result<_, anyhow::Error> {
                 let status = ImportStatus::Imported;
                 let output = outputs.iter().find(|o| o.hash() == ro.hash).ok_or_else(|| {
-                    UtxoScannerError::UtxoScanningError(format!("Output '{}' not found", ro.hash.to_hex()))
+                    anyhow!("Output '{}' not found", ro.hash.to_hex())
                 })?;
                 Ok((ro.output, status, ro.tx_id, output.clone()))
             })
-            .collect::<Result<Vec<_>, UtxoScannerError>>()?,
+            .collect::<Result<Vec<_>, _>>()?,
         );
 
         Ok(found_outputs)
