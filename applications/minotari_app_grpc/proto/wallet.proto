@@ -1137,13 +1137,61 @@ service Wallet {
   //   }
   // }
   // ```
+
+  
   rpc GetPaymentByReference(GetPaymentByReferenceRequest) returns (GetPaymentByReferenceResponse);
 
   rpc GetFeeEstimate(GetFeeEstimateRequest) returns (GetFeeEstimateResponse);
 
   rpc GetFeePerGramStats(GetFeePerGramStatsRequest) returns (GetFeePerGramStatsResponse);
+
+  rpc CreateMultisigUtxo (CreateMultisigUtxoRequest) returns (CreateMultisigUtxoResponse);
+  rpc StartMultisigUtxoTransaction (StartMultisigUtxoTransactionRequest) returns (StartMultisigUtxoTransactionResponse);
+  // rpc CreateMultisigUtxoTransferMember (CreateMultisigUtxoTransferMemberRequest) returns (CreateMultisigUtxoTransferMemberResponse);
+  // rpc CollectMultisigUtxoEncumber (CollectMultisigUtxoEncumberRequest) returns (CollectMultisigUtxoEncumberResponse);
+  // rpc SignMultisigUtxoMember (SignMultisigUtxoMemberRequest) returns (SignMultisigUtxoMemberResponse);
+  // rpc SendMultisigUtxoLeader (SendMultisigUtxoLeaderRequest) returns (SendMultisigUtxoLeaderResponse);
+
 }
 
+message CreateMultisigUtxoRequest {
+  //The commitment hash of the multisig UTXO
+  uint64 amount = 1;
+
+  // Address of the recipient 
+  string recipient_address = 2;
+
+  // How many signatures are required to spend the multisig UTXO
+  uint32 m = 3;
+
+  // List of public keys of the parties involved in the multisig
+  repeated string public_keys = 4;
+}
+
+message CreateMultisigUtxoResponse {
+  string tx_id = 1;
+}
+
+message StartMultisigUtxoTransactionRequest {
+  //The commitment hash of the multisig UTXO
+  string utxo_commitment_hash = 1;
+
+  // Address of the recipient 
+  string recipient_address = 2;
+
+  // How many signatures are required to spend the multisig UTXO
+  uint32 m = 3;
+
+  // List of public keys of the parties involved in the multisig
+  repeated string public_keys = 4;
+}
+
+message StartMultisigUtxoTransactionResponse {
+  repeated string utxos = 1;
+  repeated string commitments = 2;
+  uint64 value = 3;
+  bytes commitment_mask = 4;
+}
 
 message GetVersionRequest {}
 

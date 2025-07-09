@@ -503,6 +503,10 @@ where
                 .scan_outputs_for_one_sided_payments(outputs)
                 .await
                 .map(OutputManagerResponse::ScanOutputs),
+            OutputManagerRequest::ScanOutputsForMultisig(outputs) => self
+                .scan_outputs_for_multisig(outputs)
+                .await
+                .map(OutputManagerResponse::ScanOutputsForMultisig),
             OutputManagerRequest::AddKnownOneSidedPaymentScript(known_script) => self
                 .add_known_script(known_script)
                 .map(|_| OutputManagerResponse::AddKnownOneSidedPaymentScript),
@@ -529,6 +533,22 @@ where
                     tx_id,
                 })
             },
+            OutputManagerRequest::CreatePayToAddressContainingOutputs {
+                outputs,
+                fee_per_gram,
+                selection_criteria,
+                payment_id,
+                recipient_address,
+            } => {
+                let (tx_id, transaction) = self
+                    .create_pay_to_address_containing_outputs(outputs, selection_criteria, fee_per_gram, payment_id, recipient_address)
+                    .await?;
+                Ok(OutputManagerResponse::CreatePayToAddressContainingOutputs {
+                    transaction: Box::new(transaction),
+                    tx_id,
+                })
+            },
+            
             OutputManagerRequest::CreateClaimShaAtomicSwapTransaction(output_hash, pre_image, fee_per_gram) => {
                 self.claim_sha_atomic_swap_with_hash(output_hash, pre_image, fee_per_gram)
                     .await
@@ -1178,35 +1198,27 @@ where
         Ok(stp)
     }
 
-    #[allow(clippy::too_many_lines)]
-    async fn create_pay_to_self_containing_outputs(
+    async fn create_transaction_with_outputs_internal(
         &mut self,
         outputs: Vec<WalletOutputBuilder>,
         selection_criteria: UtxoSelectionCriteria,
         fee_per_gram: MicroMinotari,
         payment_id: PaymentId,
+        recipient_address: Option<TariAddress>,
     ) -> Result<(TxId, Transaction), OutputManagerError> {
         let total_value = outputs.iter().map(|o| o.value()).sum();
+
+        println!("Total value {}", total_value);
         let nop_script = script![Nop]?;
         let weighting = self.resources.consensus_constants.transaction_weight_params();
         let mut features_and_scripts_byte_size = 0;
+
         for output in &outputs {
             let (features, covenant, script) = (
-                output
-                    .features()
-                    .get_serialized_size()
-                    .map_err(|e| OutputManagerError::ServiceError(e.to_string()))?,
-                output
-                    .covenant()
-                    .get_serialized_size()
-                    .map_err(|e| OutputManagerError::ServiceError(e.to_string()))?,
-                output
-                    .script()
-                    .unwrap_or(&nop_script)
-                    .get_serialized_size()
-                    .map_err(|e| OutputManagerError::ServiceError(e.to_string()))?,
+                output.features().get_serialized_size().map_err(|e| OutputManagerError::ServiceError(e.to_string()))?,
+                output.covenant().get_serialized_size().map_err(|e| OutputManagerError::ServiceError(e.to_string()))?,
+                output.script().unwrap_or(&nop_script).get_serialized_size().map_err(|e| OutputManagerError::ServiceError(e.to_string()))?,
             );
-
             features_and_scripts_byte_size += weighting.round_up_features_and_scripts_size(features + covenant + script)
         }
 
@@ -1220,17 +1232,30 @@ where
             )
             .await?;
 
-        // Create builder with no recipients (other than ourselves)
         let mut builder = SenderTransactionProtocol::builder(
             self.resources.consensus_constants.clone(),
             self.resources.key_manager.clone(),
         );
+
         builder
             .with_lock_height(0)
             .with_fee_per_gram(fee_per_gram)
             .with_prevent_fee_gt_amount(false)
             .with_kernel_features(KernelFeatures::empty())
-            .with_payment_id(payment_id);
+            .with_payment_id(payment_id.clone());
+
+        if let Some(addr) = &recipient_address {
+            builder
+                .with_recipient_data(
+                    push_pubkey_script(addr.public_spend_key()),
+                    Default::default(),
+                    Covenant::default(),
+                    MicroMinotari(0),
+                    MicroMinotari(0),
+                    addr.clone(),
+                )
+                .await?;
+        }
 
         for uo in input_selection.iter() {
             builder.with_input(uo.wallet_output.clone()).await?;
@@ -1242,6 +1267,7 @@ where
                 .key_manager
                 .get_next_commitment_mask_and_script_key()
                 .await?;
+
             builder.with_change_data(
                 script!(PushPubKey(Box::new(change_script_key.pub_key)))?,
                 ExecutionStack::default(),
@@ -1253,6 +1279,7 @@ where
         }
 
         let mut db_outputs = vec![];
+
         for mut wallet_output in outputs {
             let sender_offset_key = self
                 .resources
@@ -1264,6 +1291,7 @@ where
                 .await?;
 
             let ub = wallet_output.try_build(&self.resources.key_manager).await?;
+  
             builder
                 .with_output(ub.clone(), sender_offset_key.key_id.clone())
                 .await
@@ -1306,6 +1334,41 @@ where
             .db
             .encumber_outputs(tx_id, input_selection.into_selected(), db_outputs)?;
         Ok((tx_id, stp.into_transaction()?))
+    }
+
+    // For self-send
+    pub async fn create_pay_to_self_containing_outputs(
+        &mut self,
+        outputs: Vec<WalletOutputBuilder>,
+        selection_criteria: UtxoSelectionCriteria,
+        fee_per_gram: MicroMinotari,
+        payment_id: PaymentId,
+    ) -> Result<(TxId, Transaction), OutputManagerError> {
+        self.create_transaction_with_outputs_internal(
+            outputs,
+            selection_criteria,
+            fee_per_gram,
+            payment_id,
+            None,
+        ).await
+    }
+
+    // For sending to any address
+    pub async fn create_pay_to_address_containing_outputs(
+        &mut self,
+        outputs: Vec<WalletOutputBuilder>,
+        selection_criteria: UtxoSelectionCriteria,
+        fee_per_gram: MicroMinotari,
+        payment_id: PaymentId,
+        recipient_address: TariAddress,
+    ) -> Result<(TxId, Transaction), OutputManagerError> {
+        self.create_transaction_with_outputs_internal(
+            outputs,
+            selection_criteria,
+            fee_per_gram,
+            payment_id,
+            Some(recipient_address),
+        ).await
     }
 
     async fn pre_mine_script_key_from_payment_id(
@@ -3487,6 +3550,84 @@ where
 
         self.import_onesided_outputs(scanned_outputs).await
     }
+
+
+    // Scanning outputs addressed to this wallet
+    #[allow(clippy::too_many_lines)]
+    async fn scan_outputs_for_multisig(
+        &mut self,
+        outputs: Vec<(TransactionOutput, Option<TxId>)>,
+    ) -> Result<Vec<RecoveredOutput>, OutputManagerError> {
+        // 1. Get all your wallet's public keys (or just the spend key for now)
+        let my_pubkey = self.resources.key_manager.get_spend_key().await?.pub_key;
+        let mut scanned_outputs = vec![];
+        debug!(
+            target: LOG_TARGET,
+            "scan_outputs_for_multisig test"
+        );
+        for (output, tx_id) in outputs {
+            // 2. Check if the script is a multisig script
+            if let Some(Opcode::CheckMultiSigVerifyAggregatePubKey(_m, _n, pubkeys, _msg)) =
+                output.script.as_slice().iter().find(|op| matches!(op, Opcode::CheckMultiSigVerifyAggregatePubKey(..)))
+            {
+                debug!(
+                    target: LOG_TARGET,
+                    "Found multisig script in output with tx_id: {:?}, pubkeys: {:?}",
+                    tx_id,
+                    pubkeys
+                );
+                // 3. Check if any of the multisig pubkeys match your wallet's pubkey
+                if pubkeys.iter().any(|pk| pk == &my_pubkey) {
+                    // 4. Try to derive the decryption key (sum of pubkeys, or your multisig recovery logic)
+                    let mut sum_pubkeys = UncompressedPublicKey::default();
+                    for pk in pubkeys {
+                        sum_pubkeys = &sum_pubkeys + pk.to_public_key()?;
+                    }
+
+                    debug!(
+                        target: LOG_TARGET,
+                        "It is mine: {:?}, pubkeys: {:?}",
+                        tx_id,
+                        pubkeys
+                    );
+                    let encryption_key = public_key_to_output_encryption_key(&CompressedPublicKey::new_from_pk(sum_pubkeys))?;
+
+                    // 5. Try to decrypt the output
+                    if let Ok((committed_value, spending_key, payment_id)) =
+                        EncryptedData::decrypt_data(&encryption_key, &output.commitment, &output.encrypted_data)
+                    {
+                        if output.verify_mask(
+                            &self.resources.factories.range_proof,
+                            &spending_key,
+                            committed_value.into(),
+                        )? {
+                            let spending_key_id = self.resources.key_manager.import_key(spending_key).await?;
+                            let rewound_output = WalletOutput::new_with_rangeproof(
+                                output.version,
+                                committed_value,
+                                spending_key_id,
+                                output.features,
+                                output.script,
+                                ExecutionStack::new(vec![]),
+                                TariKeyId::default(), // or derive as needed
+                                output.sender_offset_public_key,
+                                output.metadata_signature,
+                                0,
+                                output.covenant,
+                                output.encrypted_data,
+                                output.minimum_value_promise,
+                                output.proof,
+                                payment_id,
+                            );
+                            scanned_outputs.push((rewound_output, OutputSource::Multisig, tx_id));
+                        }
+                    }
+                }
+            }
+        }
+        self.import_onesided_outputs(scanned_outputs).await
+    }
+
 
     // Import scanned outputs into the wallet
     async fn import_onesided_outputs(

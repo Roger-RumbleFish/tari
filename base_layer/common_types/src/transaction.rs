@@ -191,6 +191,7 @@ impl TryFrom<ImportStatus> for TransactionStatus {
             ImportStatus::OneSidedConfirmed => Ok(TransactionStatus::OneSidedConfirmed),
             ImportStatus::CoinbaseUnconfirmed => Ok(TransactionStatus::CoinbaseUnconfirmed),
             ImportStatus::CoinbaseConfirmed => Ok(TransactionStatus::CoinbaseConfirmed),
+            
         }
     }
 }

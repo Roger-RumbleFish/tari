@@ -116,6 +116,13 @@ pub enum OutputManagerRequest {
         selection_criteria: UtxoSelectionCriteria,
         payment_id: PaymentId,
     },
+    CreatePayToAddressContainingOutputs {
+        outputs: Vec<WalletOutputBuilder>,
+        fee_per_gram: MicroMinotari,
+        selection_criteria: UtxoSelectionCriteria,
+        payment_id: PaymentId,
+        recipient_address: TariAddress,
+    },
     CancelTransaction(TxId),
     GetSpentOutputs,
     GetUnspentOutputs,
@@ -146,6 +153,7 @@ pub enum OutputManagerRequest {
 
     ScanForRecoverableOutputs(Vec<(TransactionOutput, Option<TxId>)>),
     ScanOutputs(Vec<(TransactionOutput, Option<TxId>)>),
+    ScanOutputsForMultisig(Vec<(TransactionOutput, Option<TxId>)>),
     AddKnownOneSidedPaymentScript(KnownOneSidedPaymentScript),
     CreateOutputWithFeatures {
         value: MicroMinotari,
@@ -269,11 +277,13 @@ impl fmt::Display for OutputManagerRequest {
             ),
             ScanForRecoverableOutputs(_) => write!(f, "ScanForRecoverableOutputs"),
             ScanOutputs(_) => write!(f, "ScanOutputs"),
+            ScanOutputsForMultisig(_) => write!(f, "ScanOutputsForMultisig"),
             AddKnownOneSidedPaymentScript(_) => write!(f, "AddKnownOneSidedPaymentScript"),
             CreateOutputWithFeatures { value, features } => {
                 write!(f, "CreateOutputWithFeatures({}, {})", value, features,)
             },
             CreatePayToSelfWithOutputs { .. } => write!(f, "CreatePayToSelfWithOutputs"),
+            CreatePayToAddressContainingOutputs { .. } => write!(f, "CreatePayToAddressContainingOutputs"),
             ReinstateCancelledInboundTx(_) => write!(f, "ReinstateCancelledInboundTx"),
             CreateClaimShaAtomicSwapTransaction(output, pre_image, fee_per_gram) => write!(
                 f,
@@ -332,11 +342,16 @@ pub enum OutputManagerResponse {
     FeeEstimate(MicroMinotari),
     RewoundOutputs(Vec<RecoveredOutput>),
     ScanOutputs(Vec<RecoveredOutput>),
+    ScanOutputsForMultisig(Vec<RecoveredOutput>),
     AddKnownOneSidedPaymentScript,
     CreateOutputWithFeatures {
         output: Box<WalletOutputBuilder>,
     },
     CreatePayToSelfWithOutputs {
+        transaction: Box<Transaction>,
+        tx_id: TxId,
+    },
+    CreatePayToAddressContainingOutputs {
         transaction: Box<Transaction>,
         tx_id: TxId,
     },
@@ -833,6 +848,16 @@ impl OutputManagerHandle {
         }
     }
 
+    pub async fn scan_outputs_for_multisig(
+        &mut self,
+        outputs: Vec<(TransactionOutput, Option<TxId>)>,
+    ) -> Result<Vec<RecoveredOutput>, OutputManagerError> {
+        match self.handle.call(OutputManagerRequest::ScanOutputsForMultisig(outputs)).await?? {
+            OutputManagerResponse::ScanOutputsForMultisig(outputs) => Ok(outputs),
+            _ => Err(OutputManagerError::UnexpectedApiResponse),
+        }
+    }
+
     pub async fn add_known_script(&mut self, script: KnownOneSidedPaymentScript) -> Result<(), OutputManagerError> {
         match self
             .handle
@@ -865,6 +890,31 @@ impl OutputManagerHandle {
             _ => Err(OutputManagerError::UnexpectedApiResponse),
         }
     }
+
+    pub async fn create_pay_to_address_containing_outputs(
+        &mut self,
+        outputs: Vec<WalletOutputBuilder>,
+        fee_per_gram: MicroMinotari,
+        input_selection: UtxoSelectionCriteria,
+        payment_id: PaymentId,
+        recipient_address: TariAddress
+    ) -> Result<(TxId, Transaction), OutputManagerError> {
+        match self
+            .handle
+            .call(OutputManagerRequest::CreatePayToAddressContainingOutputs {
+                outputs,
+                fee_per_gram,
+                selection_criteria: input_selection,
+                payment_id,
+                recipient_address,
+            })
+            .await??
+        {
+            OutputManagerResponse::CreatePayToAddressContainingOutputs { transaction, tx_id } => Ok((tx_id, *transaction)),
+            _ => Err(OutputManagerError::UnexpectedApiResponse),
+        }
+    }
+    
 
     #[allow(clippy::mutable_key_type)]
     pub async fn encumber_aggregate_utxo(

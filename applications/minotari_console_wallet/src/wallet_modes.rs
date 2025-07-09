@@ -46,6 +46,7 @@ use tonic::{
     transport::{Identity, Server, ServerTlsConfig},
     Request,
 };
+use tonic_reflection::server::Builder as ReflectionBuilder;
 use tui::backend::CrosstermBackend;
 use url::Url;
 
@@ -533,8 +534,16 @@ async fn run_grpc(
         Server::builder()
     };
 
+
+    // Build the reflection service
+    let reflection_service = ReflectionBuilder::configure()
+        .register_encoded_file_descriptor_set(minotari_app_grpc::FILE_DESCRIPTOR_SET)
+        .build_v1()
+        .unwrap();
+
     server_builder
         .add_service(service)
+        .add_service(reflection_service)
         .serve_with_shutdown(address, wallet.wait_until_shutdown())
         .await
         .map_err(|e| format!("GRPC server returned error:{}", e))?;
@@ -668,7 +677,7 @@ mod test {
 
                 CliCommands::SendMultisigUtxoLeader(_) => {},
                 CliCommands::CreateMultisigUtxoTransferLeader(_) => {},
-                CliCommands::CreateMultisigUtxo(_) => { },
+                CliCommands::CreateMultisigUtxo(_) => {},
                 CliCommands::SignMultisigUtxoMember(_) => {},
                 CliCommands::CollectMultisigUtxoEncumber(_) => {},
                 CliCommands::CreateMultisigUtxoTransferMember(_) => {},

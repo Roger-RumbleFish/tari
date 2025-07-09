@@ -140,7 +140,7 @@ use crate::{
                 save_multisig_utxo_encumber,
             },
             party::{create_multisig_party_member_output, send_multisig_utxo_by_leader, sign_multisig_utxo_by_member},
-            script::{get_utxo_by_commitment_hash, is_multisig_utxo},
+            script::{is_multisig_utxo},
             session::{create_multisig_output, make_utxo_multisig},
         },
         utils::{
@@ -2938,14 +2938,14 @@ pub async fn command_runner(
                 let output_service = wallet.output_manager_service.clone();
                 let transaction_service = wallet.transaction_service.clone();
 
-                let utxos = output_service
-                    .clone()
-                    .get_unspent_outputs()
-                    .await
-                    .map_err(CommandError::OutputManagerError)?;
+                // let utxos = output_service
+                //     .clone()
+                //     .get_unspent_outputs()
+                //     .await
+                //     .map_err(CommandError::OutputManagerError)?;
 
-                let utxo = get_utxo_by_commitment_hash(&utxos, args.utxo_commitment_hash)
-                    .ok_or(CommandError::General("UTXO not found by commitment hash".to_string()))?;
+                // let utxo = get_utxo_by_commitment_hash(&utxos, args.utxo_commitment_hash)
+                //     .ok_or(CommandError::General("UTXO not found by commitment hash".to_string()))?;
 
                 let public_keys = args
                     .public_keys
@@ -2953,13 +2953,17 @@ pub async fn command_runner(
                     .map(|pk| CompressedPublicKey::from(pk.clone()))
                     .collect::<Vec<_>>();
 
+                let own_address: TariAddress = wallet.get_wallet_interactive_address().await?;
+
                 let result = make_utxo_multisig(
                     output_service,
                     transaction_service,
                     wallet.key_manager_service.clone(),
-                    utxo.clone(),
+                    MicroMinotari::from(args.amount),
                     args.m,
                     public_keys,
+                    own_address,
+                    args.recipient_address.clone(),
                 )
                 .await;
 

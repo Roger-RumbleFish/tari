@@ -28,3 +28,5 @@ pub mod tls;
 pub mod tari_rpc {
     tonic::include_proto!("tari.rpc");
 }
+
+pub static FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/proto/descriptor.bin"));

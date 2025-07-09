@@ -1,15 +1,16 @@
 use chrono::Utc;
-use log::debug;
+use uuid::Uuid;
 use minotari_wallet::{
-    output_manager_service::{handle::OutputManagerHandle, storage::models::DbWalletOutput, UtxoSelectionCriteria},
+    output_manager_service::{handle::OutputManagerHandle, UtxoSelectionCriteria},
     storage::sqlite_utilities::WalletDbConnection,
     transaction_service::handle::TransactionServiceHandle,
 };
-use tari_common_types::transaction::TxId;
-use tari_core::transactions::{
+use tari_common_types::{tari_address::TariAddress, transaction::TxId};
+
+use tari_core::{transactions::{
     tari_amount::MicroMinotari,
     transaction_components::{
-        payment_id::PaymentId,
+        payment_id::{PaymentId, TxType},
         EncryptedData,
         OutputFeatures,
         WalletOutputBuilder,
@@ -19,7 +20,7 @@ use tari_core::transactions::{
         TransactionKeyManagerInterface,
         TransactionKeyManagerWrapper,
     },
-};
+}};
 use tari_crypto::{compressed_key::CompressedKey, ristretto::RistrettoPublicKey};
 use tari_script::{ExecutionStack, Opcode, TariScript};
 use tari_utilities::{hex::Hex, ByteArray};
@@ -37,22 +38,23 @@ use crate::{
             types::MultisigOutput,
         },
     },
-    cli::CreateMultisigUtxoTransferLeaderArgs, LOG_TARGET,
+    cli::CreateMultisigUtxoTransferLeaderArgs,
 };
 
 pub async fn make_utxo_multisig(
     output_service: OutputManagerHandle,
     transaction_service: TransactionServiceHandle,
     key_manager_service: TransactionKeyManagerWrapper<TransactionKeyManagerSqliteDatabase<WalletDbConnection>>,
-    utxo: DbWalletOutput,
+    amount: MicroMinotari,
     m: u8,
     public_keys: Vec<CompressedKey<RistrettoPublicKey>>,
+    sender: TariAddress,
+    recipient: TariAddress,
 ) -> Result<TxId, CommandError> {
-    let utxo_value = MicroMinotari::from(utxo.wallet_output.value);
     let (commitment_mask, script_key) = key_manager_service.get_next_commitment_mask_and_script_key().await?;
 
     let commitment = key_manager_service
-        .get_commitment(&commitment_mask.key_id, &utxo_value.into())
+        .get_commitment(&commitment_mask.key_id, &amount.into())
         .await?;
 
     let mut commitment_bytes = [0u8; 32];
@@ -86,11 +88,23 @@ pub async fn make_utxo_multisig(
     )])?;
 
     let input_selection = UtxoSelectionCriteria::default();
-    let payment_id = PaymentId::default();
+
+    let uuid = Uuid::new_v4();
+    let user_data = uuid.as_bytes().to_vec();
+    let fee_per_gram = MicroMinotari::from(1);
+    let payment_id = PaymentId::AddressAndData {
+        sender_address: sender.clone(),
+        sender_one_sided: true,
+        fee: fee_per_gram,
+        tx_type: TxType::PaymentToOther,
+        user_data: user_data,
+    };
+
+    // let payment_id = PaymentId::default();
     let custom_recover_key = derive_multisig_recovery_key_id(&ephemeral_pubkeys.clone(), &key_manager_service).await?;
 
     // Create the unblinded output
-    let output_builder = WalletOutputBuilder::new(utxo_value, commitment_mask.key_id)
+    let output_builder = WalletOutputBuilder::new(amount, commitment_mask.key_id)
         .with_script(script.clone())
         .with_features(OutputFeatures::default())
         .with_script_key(script_key.key_id)
@@ -98,8 +112,6 @@ pub async fn make_utxo_multisig(
         .encrypt_data_for_recovery(&key_manager_service, Some(&custom_recover_key), payment_id.clone())
         .await
         .unwrap();
-
-    let fee_per_gram = MicroMinotari::from(1);
 
     let (tx_id, transaction) = output_service
         .clone()
@@ -109,7 +121,7 @@ pub async fn make_utxo_multisig(
 
     transaction_service
         .clone()
-        .submit_transaction(tx_id, transaction, utxo_value, payment_id.clone())
+        .submit_transaction(tx_id, transaction, amount, payment_id.clone())
         .await
         .map_err(|e| CommandError::General(format!("Failed to submit transaction: {}", e)))?;
 

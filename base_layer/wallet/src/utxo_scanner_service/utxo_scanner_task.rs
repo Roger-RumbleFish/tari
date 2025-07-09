@@ -642,6 +642,24 @@ where
             scanned_time.as_millis(),
             one_sided_time.as_millis(),
         );
+
+        found_outputs.append(
+            &mut self
+            .resources
+            .output_manager_service
+            .scan_outputs_for_multisig(outputs.clone().into_iter().map(|o| (o, None)).collect())
+            .await?
+            .into_iter()
+            .map(|ro| -> Result<_, UtxoScannerError> {
+                let status = ImportStatus::Imported;
+                let output = outputs.iter().find(|o| o.hash() == ro.hash).ok_or_else(|| {
+                    UtxoScannerError::UtxoScanningError(format!("Output '{}' not found", ro.hash.to_hex()))
+                })?;
+                Ok((ro.output, status, ro.tx_id, output.clone()))
+            })
+            .collect::<Result<Vec<_>, UtxoScannerError>>()?,
+        );
+
         Ok(found_outputs)
     }
 

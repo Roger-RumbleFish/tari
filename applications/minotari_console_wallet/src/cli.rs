@@ -558,9 +558,6 @@ pub struct CreateMultisigUtxoTransferLeaderArgs {
     // The recipient address of the multisig UTXO
     pub recipient_address: TariAddress,
 
-    // How many parties are involved in the multisig
-    #[clap(long, default_value = "2")]
-    pub n: u8,
     // How many signatures are required to spend the multisig UTXO
     #[clap(long, default_value = "2")]
     pub m: u8,
@@ -573,8 +570,8 @@ pub struct CreateMultisigUtxoTransferLeaderArgs {
 #[derive(Debug, Args, Clone)]
 pub struct CreateMultisigUtxoArgs {
     #[clap(long)]
-    //  The commitment hash of the multisig UTXO
-    pub utxo_commitment_hash: String,
+    //  amount on microtari
+    pub amount: u64,
 
     // How many signatures are required to spend the multisig UTXO
     #[clap(long, default_value = "2")]
@@ -583,4 +580,8 @@ pub struct CreateMultisigUtxoArgs {
     #[clap(long, multiple = true)]
     // list of public keys of the parties involved in the multisig
     pub public_keys: Vec<UniPublicKey>,
+
+    #[clap(long)]
+    // The recipient address of the multisig UTXO
+    pub recipient_address: TariAddress,
 }

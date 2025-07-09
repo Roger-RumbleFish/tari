@@ -16,6 +16,8 @@ services:
       - ./wallet2_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
     command: ["--network", "esmeralda"]
+    ports:
+      - "44871:44871"
   wallet3:
     build: .
     container_name: wallet3

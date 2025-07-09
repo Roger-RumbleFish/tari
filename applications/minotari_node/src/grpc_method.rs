@@ -67,11 +67,13 @@ pub enum GrpcMethod {
     GetSideChainUtxos,
     SearchPaymentReferences,
     SearchPaymentReferencesViaOutputHash,
+    CreateMultisigUtxo,
+    StartMultisigUtxoTransaction,
 }
 
 impl GrpcMethod {
     /// All the GRPC methods as a fixed array
-    pub const ALL_VARIANTS: [GrpcMethod; 38] = [
+    pub const ALL_VARIANTS: [GrpcMethod; 40] = [
         GrpcMethod::ListHeaders,
         GrpcMethod::GetHeaderByHash,
         GrpcMethod::GetBlocks,
@@ -110,11 +112,13 @@ impl GrpcMethod {
         GrpcMethod::GetSideChainUtxos,
         GrpcMethod::SearchPaymentReferences,
         GrpcMethod::SearchPaymentReferencesViaOutputHash,
+        GrpcMethod::CreateMultisigUtxo,
+        GrpcMethod::StartMultisigUtxoTransaction,
     ];
 }
 
 impl IntoIterator for GrpcMethod {
-    type IntoIter = std::array::IntoIter<GrpcMethod, 38>;
+    type IntoIter = std::array::IntoIter<GrpcMethod, 40>;
     type Item = GrpcMethod;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -167,6 +171,8 @@ impl FromStr for GrpcMethod {
             "get_side_chain_utxos" => Ok(GrpcMethod::GetSideChainUtxos),
             "search_payment_references" => Ok(GrpcMethod::SearchPaymentReferences),
             "search_payment_references_via_output_hash" => Ok(GrpcMethod::SearchPaymentReferencesViaOutputHash),
+            "create_multisig_utxo" => Ok(GrpcMethod::CreateMultisigUtxo),
+            "start_multisig_utxo_transaction" => Ok(GrpcMethod::StartMultisigUtxoTransaction),
             _ => Err(format!("'{}' not supported", s)),
         }
     }
@@ -265,6 +271,8 @@ mod tests {
                 GrpcMethod::GetSideChainUtxos => count += 1,
                 GrpcMethod::SearchPaymentReferences => count += 1,
                 GrpcMethod::SearchPaymentReferencesViaOutputHash => count += 1,
+                GrpcMethod::CreateMultisigUtxo => count += 1,
+                GrpcMethod::StartMultisigUtxoTransaction => count += 1,
             }
         }
         assert_eq!(count, GrpcMethod::ALL_VARIANTS.len());

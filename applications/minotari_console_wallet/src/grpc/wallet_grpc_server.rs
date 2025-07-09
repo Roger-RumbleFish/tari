@@ -34,86 +34,16 @@ use futures::{
 };
 use log::*;
 use minotari_app_grpc::tari_rpc::{
-    self,
-    payment_recipient::PaymentType,
-    wallet_server,
-    BroadcastSignedOneSidedTransactionRequest,
-    BroadcastSignedOneSidedTransactionResponse,
-    CheckConnectivityResponse,
-    ClaimHtlcRefundRequest,
-    ClaimHtlcRefundResponse,
-    ClaimShaAtomicSwapRequest,
-    ClaimShaAtomicSwapResponse,
-    CoinSplitRequest,
-    CoinSplitResponse,
-    CommitmentSignature,
-    CreateBurnTransactionRequest,
-    CreateBurnTransactionResponse,
-    CreateTemplateRegistrationRequest,
-    CreateTemplateRegistrationResponse,
-    FeePerGramStat,
-    GetAddressResponse,
-    GetAllCompletedTransactionsRequest,
-    GetAllCompletedTransactionsResponse,
-    GetBalanceRequest,
-    GetBalanceResponse,
-    GetBlockHeightTransactionsRequest,
-    GetBlockHeightTransactionsResponse,
-    GetCompleteAddressResponse,
-    GetCompletedTransactionsRequest,
-    GetCompletedTransactionsResponse,
-    GetConnectivityRequest,
-    GetFeeEstimateRequest,
-    GetFeeEstimateResponse,
-    GetFeePerGramStatsRequest,
-    GetFeePerGramStatsResponse,
-    GetIdentityRequest,
-    GetIdentityResponse,
-    GetPaymentByReferenceRequest,
-    GetPaymentByReferenceResponse,
-    GetPaymentIdAddressRequest,
-    GetStateRequest,
-    GetStateResponse,
-    GetTransactionInfoRequest,
-    GetTransactionInfoResponse,
-    GetTransactionPayRefsRequest,
-    GetTransactionPayRefsResponse,
-    GetUnspentAmountsResponse,
-    GetVersionRequest,
-    GetVersionResponse,
-    ImportTransactionsRequest,
-    ImportTransactionsResponse,
-    ImportUtxosRequest,
-    ImportUtxosResponse,
-    PrepareOneSidedTransactionForSigningRequest,
-    PrepareOneSidedTransactionForSigningResponse,
-    RegisterValidatorNodeRequest,
-    RegisterValidatorNodeResponse,
-    RevalidateRequest,
-    RevalidateResponse,
-    SendShaAtomicSwapRequest,
-    SendShaAtomicSwapResponse,
-    SetBaseNodeRequest,
-    SetBaseNodeResponse,
-    TransactionDirection,
-    TransactionEvent,
-    TransactionEventRequest,
-    TransactionEventResponse,
-    TransactionInfo,
-    TransactionStatus,
-    TransferRequest,
-    TransferResponse,
-    TransferResult,
-    ValidateRequest,
-    ValidateResponse,
+    self, payment_recipient::PaymentType, wallet_server, BroadcastSignedOneSidedTransactionRequest, BroadcastSignedOneSidedTransactionResponse, CheckConnectivityResponse, ClaimHtlcRefundRequest, ClaimHtlcRefundResponse, ClaimShaAtomicSwapRequest, ClaimShaAtomicSwapResponse, CoinSplitRequest, CoinSplitResponse, CommitmentSignature, CreateBurnTransactionRequest, CreateBurnTransactionResponse, CreateMultisigUtxoRequest, CreateMultisigUtxoResponse, CreateTemplateRegistrationRequest, CreateTemplateRegistrationResponse, FeePerGramStat, GetAddressResponse, GetAllCompletedTransactionsRequest, GetAllCompletedTransactionsResponse, GetBalanceRequest, GetBalanceResponse, GetBlockHeightTransactionsRequest, GetBlockHeightTransactionsResponse, GetCompleteAddressResponse, GetCompletedTransactionsRequest, GetCompletedTransactionsResponse, GetConnectivityRequest, GetFeeEstimateRequest, GetFeeEstimateResponse, GetFeePerGramStatsRequest, GetFeePerGramStatsResponse, GetIdentityRequest, GetIdentityResponse, GetPaymentByReferenceRequest, GetPaymentByReferenceResponse, GetPaymentIdAddressRequest, GetStateRequest, GetStateResponse, GetTransactionInfoRequest, GetTransactionInfoResponse, GetTransactionPayRefsRequest, GetTransactionPayRefsResponse, GetUnspentAmountsResponse, GetVersionRequest, GetVersionResponse, ImportTransactionsRequest, ImportTransactionsResponse, ImportUtxosRequest, ImportUtxosResponse, PrepareOneSidedTransactionForSigningRequest, PrepareOneSidedTransactionForSigningResponse, RegisterValidatorNodeRequest, RegisterValidatorNodeResponse, RevalidateRequest, RevalidateResponse, SendShaAtomicSwapRequest, SendShaAtomicSwapResponse, SetBaseNodeRequest, SetBaseNodeResponse, StartMultisigUtxoTransactionRequest, StartMultisigUtxoTransactionResponse, TransactionDirection, TransactionEvent, TransactionEventRequest, TransactionEventResponse, TransactionInfo, TransactionStatus, TransferRequest, TransferResponse, TransferResult, ValidateRequest, ValidateResponse
 };
+use minotari_app_utilities::utilities::UniPublicKey;
 use minotari_wallet::{
     connectivity_service::WalletConnectivityInterface,
     error::WalletStorageError,
     output_manager_service::{handle::OutputManagerHandle, UtxoSelectionCriteria},
     transaction_service::{
         handle::TransactionServiceHandle,
-        offline_signing::models::{SignedOneSidedTransactionResult, TransactionResult},
+        offline_signing::models::{SignedOneSidedTransactionResult},
         storage::models::{self, WalletTransaction},
     },
     WalletSqlite,
@@ -142,7 +72,7 @@ use tari_core::{
     },
 };
 use tari_script::script;
-use tari_utilities::{hex::Hex, ByteArray};
+use tari_utilities::{hex::Hex, message_format::MessageFormat, ByteArray};
 use tokio::{
     sync::{broadcast, Mutex},
     task,
@@ -151,8 +81,7 @@ use tokio::{
 use tonic::{Request, Response, Status};
 
 use crate::{
-    grpc::{convert_to_transaction_event, wallet_debouncer::WalletDebouncer, TransactionWrapper},
-    notifier::{CANCELLED, CONFIRMATION, MINED, QUEUED, RECEIVED, SENT},
+    automation::multisig::{session::{create_multisig_output, make_utxo_multisig}}, cli::CreateMultisigUtxoTransferLeaderArgs, grpc::{convert_to_transaction_event, wallet_debouncer::WalletDebouncer, TransactionWrapper}, notifier::{CANCELLED, CONFIRMATION, MINED, QUEUED, RECEIVED, SENT}
 };
 
 const LOG_TARGET: &str = "wallet::ui::grpc";
@@ -793,7 +722,8 @@ impl wallet_server::Wallet for WalletGrpcServer {
             .await
         {
             Ok(data) => {
-                let json_data = data.to_json().map_err(|e| Status::internal(e.to_string()))?;
+                let json_data = <_ as minotari_wallet::transaction_service::offline_signing::models::TransactionResult>::to_json(&data)
+                    .map_err(|e| Status::internal(e.to_string()))?;
                 PrepareOneSidedTransactionForSigningResponse {
                     is_success: true,
                     result: json_data,
@@ -823,7 +753,7 @@ impl wallet_server::Wallet for WalletGrpcServer {
         let message = request.into_inner();
 
         let mut transaction_service = self.get_transaction_service();
-        let request = SignedOneSidedTransactionResult::from_json(&message.request)
+        let request = <SignedOneSidedTransactionResult as minotari_wallet::transaction_service::offline_signing::models::TransactionResult>::from_json(&message.request)
             .map_err(|err| Status::internal(err.to_string()))?;
         let response = match transaction_service
             .broadcast_signed_one_sided_transaction(request)
@@ -2042,6 +1972,124 @@ impl wallet_server::Wallet for WalletGrpcServer {
         Ok(Response::new(GetFeePerGramStatsResponse {
             fee_per_gram_stats: fee_stats,
         }))
+    }
+
+    // create_multisig_utxo
+    async fn create_multisig_utxo(
+        &self,
+        request: Request<CreateMultisigUtxoRequest>,
+    ) -> Result<Response<CreateMultisigUtxoResponse>, Status> {
+        let message = request.into_inner();
+
+        if (message.m as usize) > message.public_keys.len() {
+            return Err(Status::invalid_argument(
+                "m must be less than or equal to the number of public keys".to_string(),
+            ));
+        }
+
+        let output_service = self.wallet.output_manager_service.clone();
+        let transaction_service = self.wallet.transaction_service.clone();
+        let key_manager_service = self.wallet.key_manager_service.clone();
+
+        // let utxos = output_service.clone().get_unspent_outputs().await.map_err(|e| {
+        //     Status::internal(format!("Utxo not found: {}", message.utxo_commitment_hash))
+        // })?;
+
+  
+        // let utxo = get_utxo_by_commitment_hash(&utxos, message.utxo_commitment_hash)
+        //     .ok_or(Status::not_found("UTXO not found by commitment hash".to_string()))?;
+
+   
+        let public_keys = message
+            .public_keys
+            .iter()
+            .map(|pk| {
+                CompressedPublicKey::from_hex(pk)
+                    .map_err(|e| Status::invalid_argument(format!("Invalid public key: {}", e)))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let recipient_address = TariAddress::from_str(&message.recipient_address)
+            .map_err(|_| Status::invalid_argument("Invalid recipient address".to_string()))?;
+
+        let own_address: TariAddress = self
+            .wallet
+            .get_wallet_interactive_address()
+            .await
+            .map_err(|e| Status::internal(format!("{:?}", e)))?;
+
+        let result = make_utxo_multisig(
+            output_service,
+            transaction_service,
+            key_manager_service,
+            MicroMinotari::from(message.amount),
+            message.m as u8,
+            public_keys,
+            own_address,
+            recipient_address,
+        )
+        .await;
+
+        match result {
+            Ok(tx_id) => {
+                Ok(Response::new(CreateMultisigUtxoResponse {
+                    tx_id: tx_id.to_string(),
+                }))
+            },
+            Err(e) => {
+                Err(Status::internal(format!("Error creating multisig UTXO: {}", e)))
+            },
+        }
+    }
+
+    // start utxo multisig transaction
+    async fn start_multisig_utxo_transaction(
+        &self,
+        request: Request<StartMultisigUtxoTransactionRequest>,
+    ) -> Result<Response<StartMultisigUtxoTransactionResponse>, Status> {
+
+        let message = request.into_inner();
+
+        let mut output_service = self.wallet.output_manager_service.clone();
+
+        let recipient_address = TariAddress::from_str(&message.recipient_address)
+            .map_err(|_| Status::invalid_argument("Invalid recipient address".to_string()))?;
+
+        let public_keys = message
+            .public_keys
+            .iter()
+            .map(|pk| {
+                CompressedPublicKey::from_hex(pk)
+                    .map(UniPublicKey)
+                    .map_err(|e| Status::invalid_argument(format!("Invalid public key: {}", e)))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let args = CreateMultisigUtxoTransferLeaderArgs {
+            utxo_commitment_hash: message.utxo_commitment_hash,
+            recipient_address: recipient_address,
+            m: message.m as u8,
+            public_keys: public_keys.into(),
+        };
+
+
+        let result = create_multisig_output(&mut output_service, args).await;
+
+        match result {
+            Ok(output) => {
+                Ok(Response::new(StartMultisigUtxoTransactionResponse {
+                    commitment_mask: output.commitment_mask.to_binary().unwrap(),
+                    commitments: output.commitments,
+                    value: output.value.as_u64(),
+                    utxos: output.utxos.into_iter().map(|u| u.into()).collect(),
+
+                }))
+            },
+            Err(e) => {
+                Err(Status::internal(format!("Error starting multisig utxo transfer: {}", e)))
+            },
+        }
+  
     }
 }
 

@@ -74,7 +74,7 @@ pub fn either_to_node_id(either: Either<CommsPublicKey, NodeId>) -> NodeId {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UniPublicKey(CompressedPublicKey);
+pub struct UniPublicKey(pub CompressedPublicKey);
 
 impl FromStr for UniPublicKey {
     type Err = UniIdError;
