@@ -10,12 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(true)
         .file_descriptor_set_path("proto/descriptor.bin")
         .compile_protos(
-            &[
-                "proto/base_node.proto",
-                "proto/wallet.proto",
-                "proto/validator_node.proto",
-                "proto/p2pool.proto",
-            ],
+            &["proto/base_node.proto", "proto/wallet.proto", "proto/p2pool.proto"],
             &["proto"],
         )?;
 

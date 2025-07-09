@@ -173,6 +173,8 @@ pub trait TransactionBackend: Send + Sync + Clone {
         &self,
         payref: &FixedHash,
     ) -> Result<Option<CompletedTransaction>, TransactionStorageError>;
+
+    fn get_last_scanned_height(&self) -> Result<Option<u64>, TransactionStorageError>;
 }
 
 #[derive(Clone, PartialEq)]
@@ -364,6 +366,10 @@ where T: TransactionBackend + 'static
                 tx_id,
                 Box::new(transaction),
             )))
+    }
+
+    pub fn get_last_scanned_height(&self) -> Result<Option<u64>, TransactionStorageError> {
+        self.db.get_last_scanned_height()
     }
 
     pub fn get_pending_outbound_transaction(
@@ -885,7 +891,7 @@ fn log_error<T>(req: DbKey, err: TransactionStorageError) -> Result<T, Transacti
         target: LOG_TARGET,
         "Database access error on request: {}: {}",
         req,
-        err.to_string()
+        err
     );
     Err(err)
 }

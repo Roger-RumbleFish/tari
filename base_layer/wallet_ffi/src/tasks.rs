@@ -51,14 +51,13 @@ pub async fn recovery_event_monitoring(
 ) {
     loop {
         match event_stream.recv().await {
-            Ok(UtxoScannerEvent::ConnectingToBaseNode(peer)) => {
+            Ok(UtxoScannerEvent::ConnectingToBaseNode) => {
                 unsafe {
                     (recovery_progress_callback)(context.0, RecoveryEvent::ConnectingToBaseNode as u8, 0u64, 0u64);
                 }
                 info!(
                     target: LOG_TARGET,
-                    "Attempting connection to base node {}",
-                    peer.to_hex(),
+                    "Attempting connection to base node",
                 );
             },
             Ok(UtxoScannerEvent::ConnectedToBaseNode(pk, elapsed)) => {
@@ -104,26 +103,24 @@ pub async fn recovery_event_monitoring(
             },
             Ok(UtxoScannerEvent::Completed {
                 final_height,
+                time_taken: elapsed,
                 num_recovered,
                 value_recovered,
-                time_taken: elapsed,
             }) => {
                 let rate = (final_height as f32) * 1000f32 / (elapsed.as_millis() as f32);
                 info!(
                     target: LOG_TARGET,
-                    "Recovery complete! Scanned {} blocks in {:.2?} ({:.2?} blocks/s), Recovered {} outputs worth {}",
+                    "Recovery complete! Scanned {} blocks in {:.2?} ({:.2?} blocks/s)",
                     final_height,
                     elapsed,
                     rate,
-                    num_recovered,
-                    value_recovered
                 );
                 unsafe {
                     (recovery_progress_callback)(
                         context.0,
                         RecoveryEvent::Completed as u8,
                         num_recovered,
-                        u64::from(value_recovered),
+                        value_recovered.as_u64(),
                     );
                 }
                 break;
