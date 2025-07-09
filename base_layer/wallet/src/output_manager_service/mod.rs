@@ -55,6 +55,7 @@ use tokio::sync::broadcast;
 
 use crate::{
     base_node_service::handle::BaseNodeServiceHandle,
+    client::http_client_factory::DefaultHttpClientFactory,
     connectivity_service::WalletConnectivityHandle,
     output_manager_service::{
         config::OutputManagerServiceConfig,
@@ -124,7 +125,8 @@ where
         let network = self.network.as_network();
         context.spawn_when_ready(move |handles| async move {
             let base_node_service_handle = handles.expect_handle::<BaseNodeServiceHandle>();
-            let connectivity = handles.expect_handle::<WalletConnectivityHandle>();
+            let connectivity: WalletConnectivityHandle<DefaultHttpClientFactory> =
+                handles.expect_handle::<WalletConnectivityHandle<_>>();
             let key_manager = handles.expect_handle::<TKeyManagerInterface>();
             let utxo_scanner_handle = handles.expect_handle::<UtxoScannerHandle>();
             let transaction_service_handle = handles.expect_handle::<TransactionServiceHandle>();

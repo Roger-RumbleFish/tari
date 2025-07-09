@@ -54,6 +54,7 @@ use tokio::sync::broadcast;
 
 use crate::{
     base_node_service::handle::BaseNodeServiceHandle,
+    client::http_client_factory::DefaultHttpClientFactory,
     connectivity_service::WalletConnectivityHandle,
     output_manager_service::handle::OutputManagerHandle,
     storage::database::{WalletBackend, WalletDatabase},
@@ -243,7 +244,8 @@ where
             let outbound_message_service = handles.expect_handle::<Dht>().outbound_requester();
             let output_manager_service = handles.expect_handle::<OutputManagerHandle>();
             let core_key_manager_service = handles.expect_handle::<TKeyManagerInterface>();
-            let connectivity = handles.expect_handle::<WalletConnectivityHandle>();
+            let connectivity: WalletConnectivityHandle<DefaultHttpClientFactory> =
+                handles.expect_handle::<WalletConnectivityHandle<_>>();
             let base_node_service_handle = handles.expect_handle::<BaseNodeServiceHandle>();
             let utxo_scanner_handle = handles.expect_handle::<UtxoScannerHandle>();
 
