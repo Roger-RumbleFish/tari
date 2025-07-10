@@ -79,13 +79,17 @@ impl BaseNodeWalletClient for Client {
     async fn get_tip_info(&self) -> Result<TipInfoResponse, anyhow::Error> {
         debug!(target: LOG_TARGET, "Requesting tip info from Base Node wallet service at {}", self.api_address);
         let timer = Instant::now();
-        let res = self
-            .http_client
-            .get(self.api_address.join("/get_tip_info")?)
-            .send()
-            .await?;
-        self.set_last_latency(timer.elapsed());
 
+        let url = self.api_address.join("/get_tip_info")?;
+        let res = match self.http_client.get(url.clone()).send().await {
+            Ok(response) => response,
+            Err(e) => {
+                error!(target: LOG_TARGET, "HTTP request to {} failed: {:?}", url, e);
+                println!("HTTP request to {} failed: {:?}", url, e); // Console output
+                return Err(anyhow!("HTTP request to {} failed: {:?}", url, e));
+            }
+        };
+        self.set_last_latency(timer.elapsed());
         if res.status().is_client_error() || res.status().is_server_error() {
             let status = res.status();
             let body = res.text().await.unwrap_or_else(|_| "No response body".to_string());

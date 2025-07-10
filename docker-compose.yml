@@ -20,13 +20,7 @@ services:
     volumes:
       - ./wallet2_data:/wallet_data
     entrypoint: ["minotari_console_wallet", "--base-path", "/wallet_data"]
-    command:
-      [
-        "--network",
-        "esmeralda",
-        "--http_client_url",
-        "https://rpc.esmeralda.tari.com",
-      ]
+    command: ["--network", "esmeralda"]
     ports:
       - "44871:44871"
   wallet3:
